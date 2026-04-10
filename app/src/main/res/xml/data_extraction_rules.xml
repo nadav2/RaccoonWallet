@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="public_store.enc" />
+        <exclude domain="file" path="public_store.enc.tmp" />
+        <exclude domain="file" path="secret_store.enc" />
+        <exclude domain="file" path="secret_store.enc.tmp" />
+        <exclude domain="sharedpref" path="raccoonwallet_public_keyset_prefs.xml" />
+        <exclude domain="sharedpref" path="raccoonwallet_secret_keyset_prefs.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="public_store.enc" />
+        <exclude domain="file" path="public_store.enc.tmp" />
+        <exclude domain="file" path="secret_store.enc" />
+        <exclude domain="file" path="secret_store.enc.tmp" />
+        <exclude domain="sharedpref" path="raccoonwallet_public_keyset_prefs.xml" />
+        <exclude domain="sharedpref" path="raccoonwallet_secret_keyset_prefs.xml" />
+    </device-transfer>
+</data-extraction-rules>

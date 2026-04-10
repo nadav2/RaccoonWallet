@@ -1,0 +1,63 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: mode
+    attributes:
+      label: App Mode
+      options:
+        - Vault
+        - Signer
+        - Both
+        - N/A
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport Method
+      options:
+        - NFC
+        - QR Code
+        - N/A
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device Model
+      placeholder: e.g., Pixel 8 Pro
+    validations:
+      required: true
+  - type: input
+    id: android-version
+    attributes:
+      label: Android Version
+      placeholder: e.g., Android 14 (API 34)
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this?
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste any relevant logcat output here.
+      render: shell

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="file" path="public_store.enc" />
+    <exclude domain="file" path="secret_store.enc" />
+    <exclude domain="sharedpref" path="raccoonwallet_public_keyset_prefs.xml" />
+    <exclude domain="sharedpref" path="raccoonwallet_secret_keyset_prefs.xml" />
+</full-backup-content>

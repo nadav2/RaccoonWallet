@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/hce_service_desc"
+    android:requireDeviceUnlock="true">
+    <aid-group android:category="other"
+        android:description="@string/aid_group_desc">
+        <!-- Custom AID: F0 "FOX" "WALL" in ASCII hex -->
+        <aid-filter android:name="F0464F5857414C4C" />
+    </aid-group>
+</host-apdu-service>

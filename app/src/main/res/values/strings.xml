@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Raccoon Wallet</string>
+    <string name="hce_service_desc">Raccoon Wallet NFC Signing Service</string>
+    <string name="aid_group_desc">Raccoon Wallet Threshold Signing</string>
+</resources>
