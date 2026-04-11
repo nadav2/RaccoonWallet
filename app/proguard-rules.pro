@@ -8,12 +8,23 @@
 # --- bitcoinj (BIP32/BIP39) ---
 # MnemonicCode.INSTANCE loads the English wordlist from a classpath resource
 # in a static initializer. R8 strips this, causing INSTANCE to be null.
--keep class org.bitcoinj.crypto.** { *; }
+-keep class org.bitcoinj.crypto.MnemonicCode { *; }
+-keep class org.bitcoinj.crypto.HDKeyDerivation { *; }
+-keep class org.bitcoinj.crypto.ChildNumber { *; }
 
 # --- BouncyCastle ---
-# CustomNamedCurves.getByName() uses reflection to locate curve definitions.
-# EC math, Keccak, and Paillier all depend on BouncyCastle internals.
--keep class org.bouncycastle.** { *; }
+# CustomNamedCurves.getByName() uses anonymous inner classes as curve holders.
+# R8 cannot trace the string-based lookup so all holders must be kept.
+-keep class org.bouncycastle.crypto.ec.CustomNamedCurves { *; }
+-keep class org.bouncycastle.crypto.ec.CustomNamedCurves$* { *; }
+# secp256k1 curve implementation classes (field arithmetic, point ops).
+-keep class org.bouncycastle.math.ec.custom.sec.SecP256K1** { *; }
+# EC point internals — ECPoint subclasses, field elements, multipliers.
+-keep class org.bouncycastle.math.ec.** { *; }
+# Directly referenced classes.
+-keep class org.bouncycastle.crypto.digests.KeccakDigest { *; }
+-keep class org.bouncycastle.crypto.params.ECDomainParameters { *; }
+-keep class org.bouncycastle.asn1.x9.X9ECParameters { *; }
 -dontwarn org.bouncycastle.**
 
 # --- kotlinx.serialization ---
