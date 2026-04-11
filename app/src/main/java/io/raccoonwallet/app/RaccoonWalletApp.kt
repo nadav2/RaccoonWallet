@@ -5,6 +5,7 @@ import io.raccoonwallet.app.core.AppSettingsService
 import io.raccoonwallet.app.core.model.AuthMode
 import io.raccoonwallet.app.core.network.ChainManager
 import io.raccoonwallet.app.core.storage.EncryptedJsonStore
+import io.raccoonwallet.app.core.storage.KeystoreAead
 import io.raccoonwallet.app.core.storage.KeystoreCipher
 import io.raccoonwallet.app.core.storage.PublicStore
 import io.raccoonwallet.app.core.storage.PublicStoreData
@@ -36,7 +37,9 @@ class RaccoonWalletApp : Application() {
     val secretStoreFile: File
         get() = File(filesDir, "secret_store.enc")
 
-    /** Build a fresh SecretStore bound to the current file and keystore state. */
+    fun getSecretAead(authMode: AuthMode): KeystoreAead =
+        KeystoreProvider.secretAead(authMode)
+
     fun getSecretStore(authMode: AuthMode): SecretStore {
         return SecretStore(
             EncryptedJsonStore(

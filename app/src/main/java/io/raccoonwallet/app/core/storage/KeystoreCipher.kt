@@ -25,7 +25,7 @@ object KeystoreCipher {
     private const val ANDROID_KEYSTORE = "AndroidKeyStore"
     private const val GCM_TAG_BITS = 128
     private const val GCM_NONCE_LENGTH = 12
-    private const val AUTH_VALIDITY_SECONDS = 5
+    private const val AUTH_VALIDITY_TIME_WINDOW = 5
 
     fun ensureKey(alias: String, authMode: AuthMode) {
         val ks = KeyStore.getInstance(ANDROID_KEYSTORE)
@@ -78,8 +78,11 @@ object KeystoreCipher {
             spec.setUnlockedDeviceRequired(true)
             return
         }
+        // BIOMETRIC_ONLY: timeout=0 → per-operation auth via CryptoObject (no time window)
+        // BIOMETRIC_OR_DEVICE: timeout=5s → DEVICE_CREDENTIAL doesn't support CryptoObject
+        val timeout = if (authMode == AuthMode.BIOMETRIC_ONLY) 0 else AUTH_VALIDITY_TIME_WINDOW
         spec.setUserAuthenticationRequired(true)
-            .setUserAuthenticationParameters(AUTH_VALIDITY_SECONDS, authMode.authenticators)
+            .setUserAuthenticationParameters(timeout, authMode.authenticators)
         if (authMode == AuthMode.BIOMETRIC_ONLY) {
             spec.setInvalidatedByBiometricEnrollment(true)
         }
@@ -122,9 +125,7 @@ object KeystoreCipher {
      * Throws UserNotAuthenticatedException if key requires biometric and user hasn't authed.
      */
     fun encrypt(alias: String, plaintext: ByteArray): ByteArray {
-        val ks = KeyStore.getInstance(ANDROID_KEYSTORE)
-        ks.load(null)
-        val key = ks.getKey(alias, null)
+        val key = loadKey(alias)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key)
         cipher.updateAAD(alias.toByteArray())
@@ -141,13 +142,52 @@ object KeystoreCipher {
         require(data.size > GCM_NONCE_LENGTH) { "Data too short" }
         val nonce = data.copyOfRange(0, GCM_NONCE_LENGTH)
         val ciphertext = data.copyOfRange(GCM_NONCE_LENGTH, data.size)
-        val ks = KeyStore.getInstance(ANDROID_KEYSTORE)
-        ks.load(null)
-        val key = ks.getKey(alias, null)
+        val key = loadKey(alias)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, nonce))
         cipher.updateAAD(alias.toByteArray())
         return cipher.doFinal(ciphertext)
+    }
+
+    // ── CryptoObject support (per-operation auth with BIOMETRIC_ONLY) ──
+
+    fun extractNonce(data: ByteArray): ByteArray {
+        require(data.size > GCM_NONCE_LENGTH) { "Data too short" }
+        return data.copyOfRange(0, GCM_NONCE_LENGTH)
+    }
+
+    fun createEncryptCipher(alias: String): Cipher {
+        val key = loadKey(alias)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        return cipher
+    }
+
+    fun createDecryptCipher(alias: String, nonce: ByteArray): Cipher {
+        val key = loadKey(alias)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, nonce))
+        return cipher
+    }
+
+    fun encryptWithCipher(alias: String, cipher: Cipher, plaintext: ByteArray): ByteArray {
+        cipher.updateAAD(alias.toByteArray())
+        val nonce = cipher.iv
+        val ciphertext = cipher.doFinal(plaintext)
+        return nonce + ciphertext
+    }
+
+    fun decryptWithCipher(alias: String, cipher: Cipher, data: ByteArray): ByteArray {
+        require(data.size > GCM_NONCE_LENGTH) { "Data too short" }
+        val ciphertext = data.copyOfRange(GCM_NONCE_LENGTH, data.size)
+        cipher.updateAAD(alias.toByteArray())
+        return cipher.doFinal(ciphertext)
+    }
+
+    private fun loadKey(alias: String): SecretKey {
+        val ks = KeyStore.getInstance(ANDROID_KEYSTORE)
+        ks.load(null)
+        return ks.getKey(alias, null) as SecretKey
     }
 
     fun deleteKey(alias: String) {

@@ -6,6 +6,7 @@ import io.raccoonwallet.app.core.storage.Serializers.toBase64
 import io.raccoonwallet.app.core.storage.Serializers.toECPointFromBase64
 import org.bouncycastle.math.ec.ECPoint
 import java.math.BigInteger
+import javax.crypto.Cipher
 
 class SecretStore(private val store: EncryptedJsonStore<SecretStoreData>) {
 
@@ -68,6 +69,16 @@ class SecretStore(private val store: EncryptedJsonStore<SecretStoreData>) {
         val data = store.read()
         return buildPaillierPk(data.signerPaillierN, data.signerPaillierG)
     }
+
+    // ── CryptoObject support ──
+
+    suspend fun readEncryptedBytes(): ByteArray? = store.readEncryptedBytes()
+
+    suspend fun readData(cipher: Cipher? = null, encryptedBytes: ByteArray? = null): SecretStoreData =
+        if (cipher != null) store.readWithCipher(cipher, encryptedBytes) else store.read()
+
+    suspend fun writeAll(cipher: Cipher? = null, transform: (SecretStoreData) -> SecretStoreData): SecretStoreData =
+        if (cipher != null) store.updateWithCipher(cipher, transform) else store.update(transform)
 
     suspend fun deleteAll() { store.delete() }
 

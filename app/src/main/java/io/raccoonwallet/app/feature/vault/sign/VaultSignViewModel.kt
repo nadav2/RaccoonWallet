@@ -21,7 +21,10 @@ import io.raccoonwallet.app.core.model.TransportMode
 import io.raccoonwallet.app.core.model.TxDisplayData
 import io.raccoonwallet.app.core.network.BroadcastException
 import io.raccoonwallet.app.core.model.TxStatus
-import io.raccoonwallet.app.core.storage.BiometricGate
+import io.raccoonwallet.app.core.crypto.PaillierCipher
+import io.raccoonwallet.app.core.storage.BiometricSecretReader
+import io.raccoonwallet.app.core.storage.Serializers.toBigIntegerFromBase64
+import io.raccoonwallet.app.core.storage.Serializers.toECPointFromBase64
 import io.raccoonwallet.app.core.transport.TransportMessage
 import io.raccoonwallet.app.core.transport.nfc.RaccoonWalletHceService
 import io.raccoonwallet.app.core.transport.qr.QrTransport
@@ -233,22 +236,22 @@ class VaultSignViewModel(
                 _signState.value = SignState.Finalizing
 
                 val authMode = publicStore.getAuthMode()
-                if (authMode != AuthMode.NONE) {
-                    val act = activity
-                        ?: throw RuntimeException("Activity not available for biometric prompt")
-                    val authed = BiometricGate.authenticate(act, authMode)
-                    if (!authed) {
-                        _signState.value = SignState.Failed(FlowError.BiometricDenied())
-                        return@launch
-                    }
-                }
                 val secretStore = app.getSecretStore(authMode)
+                val aead = if (authMode == AuthMode.BIOMETRIC_ONLY) app.getSecretAead(authMode) else null
+                val data = BiometricSecretReader.authenticateAndRead(authMode, activity, secretStore, aead)
+                if (data == null) {
+                    _signState.value = SignState.Failed(FlowError.BiometricDenied())
+                    return@launch
+                }
 
-                val paillierSk = secretStore.getPaillierSecretKey()
-                    ?: throw RuntimeException("Paillier secret key not found")
-                val paillierPk = secretStore.getPaillierPublicKey()
-                    ?: throw RuntimeException("Paillier public key not found")
-                val jointPubKey = secretStore.getJointPublicKey(accountIndex)
+                val lambda = data.paillierLambda?.toBigIntegerFromBase64() ?: throw RuntimeException("Paillier secret key not found")
+                val mu = data.paillierMu?.toBigIntegerFromBase64() ?: throw RuntimeException("Paillier secret key not found")
+                val paillierSk = PaillierCipher.SecretKey(lambda, mu)
+                val n = data.paillierN?.toBigIntegerFromBase64() ?: throw RuntimeException("Paillier public key not found")
+                val g = data.paillierG?.toBigIntegerFromBase64() ?: throw RuntimeException("Paillier public key not found")
+                val paillierPk = PaillierCipher.PublicKey(n = n, nSquared = n.multiply(n), g = g)
+                val share = data.shares.find { it.accountIndex == accountIndex }
+                val jointPubKey = share?.jointPublicKey?.toECPointFromBase64()
                     ?: throw RuntimeException("Joint public key not found")
 
                 val r2 = Secp256k1.decompressPoint(response.r2Point)

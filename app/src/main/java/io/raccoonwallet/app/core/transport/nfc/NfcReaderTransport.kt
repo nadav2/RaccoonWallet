@@ -61,43 +61,6 @@ class NfcReaderTransport(
     }
 
     /**
-     * Send a transport message and receive a response, handling chunking and encryption.
-     */
-    fun sendAndReceive(insCode: Byte, message: TransportMessage): TransportMessage {
-        val iso = isoDep ?: throw IllegalStateException("Not connected")
-        val encoded = codec.encode(message)
-        // MED-3: Require established session — never send/receive unencrypted
-        require(sessionCrypto.isEstablished()) { "Cannot send without established session" }
-        val encrypted = sessionCrypto.encrypt(encoded)
-
-        // Chunk if necessary
-        val chunks = chunker.chunk(encrypted, insCode)
-
-        var lastResponse: ByteArray = byteArrayOf()
-        for ((index, chunk) in chunks.withIndex()) {
-            val ins = if (index < chunks.size - 1) RaccoonWalletHceService.INS_CHUNK_CONTINUE else insCode
-            val apdu = buildApdu(ins, chunk)
-            lastResponse = iso.transceive(apdu)
-            // Check intermediate chunk responses — don't continue sending on error
-            if (index < chunks.size - 1 && !isSwOk(lastResponse)) {
-                throw RuntimeException("APDU error on chunk $index: ${lastResponse.joinToString { "%02X".format(it) }}")
-            }
-        }
-
-        // Parse response
-        if (lastResponse.size <= 2) {
-            if (isSwOk(lastResponse)) {
-                return TransportMessage.Error(0, "ACK only, no data")
-            }
-            throw RuntimeException("APDU error: ${lastResponse.joinToString { "%02X".format(it) }}")
-        }
-
-        val responseData = lastResponse.copyOfRange(0, lastResponse.size - 2)
-        val decrypted = sessionCrypto.decrypt(responseData)
-        return codec.decode(decrypted)
-    }
-
-    /**
      * Send a transport message expecting only SW_OK (no response data).
      * Used for delivering SignRequest on Tap 1.
      */

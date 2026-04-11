@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
+import javax.crypto.Cipher
 
 /**
  * Encrypted JSON file store backed by Android Keystore AES-256-GCM.
@@ -40,6 +41,69 @@ class EncryptedJsonStore<T>(
         atomicWrite(updated)
         cached = updated
         updated
+    }
+
+    // ── CryptoObject support (per-operation auth) ──
+
+    suspend fun readEncryptedBytes(): ByteArray? = withContext(Dispatchers.IO) {
+        if (!file.exists()) return@withContext null
+        val bytes = file.readBytes()
+        if (bytes.isEmpty()) null else bytes
+    }
+
+    suspend fun readWithCipher(cipher: Cipher, encryptedBytes: ByteArray? = null): T = mutex.withLock {
+        cached?.let { return it }
+        val value = if (encryptedBytes != null) {
+            decryptFromBytes(cipher, encryptedBytes)
+        } else {
+            decryptFromDisk(cipher)
+        }
+        cached = value
+        value
+    }
+
+    suspend fun updateWithCipher(encryptCipher: Cipher, transform: (T) -> T): T = mutex.withLock {
+        val current = cached ?: defaultValue
+        val updated = transform(current)
+        atomicWriteWithCipher(updated, encryptCipher)
+        cached = updated
+        updated
+    }
+
+    private fun decryptFromBytes(cipher: Cipher, encrypted: ByteArray): T {
+        return try {
+            val decrypted = aead.decryptWithCipher(cipher, encrypted)
+            json.decodeFromString(serializer, String(decrypted))
+        } catch (e: java.security.GeneralSecurityException) {
+            throw StoreDecryptionException(
+                "Failed to decrypt ${file.name}. Internal: ${e.message}", e
+            )
+        }
+    }
+
+    private suspend fun decryptFromDisk(cipher: Cipher): T = withContext(Dispatchers.IO) {
+        if (!file.exists()) return@withContext defaultValue
+        val encrypted = file.readBytes()
+        if (encrypted.isEmpty()) return@withContext defaultValue
+        try {
+            val decrypted = aead.decryptWithCipher(cipher, encrypted)
+            json.decodeFromString(serializer, String(decrypted))
+        } catch (e: java.security.GeneralSecurityException) {
+            throw StoreDecryptionException(
+                "Failed to decrypt ${file.name}. Internal: ${e.message}", e
+            )
+        }
+    }
+
+    private suspend fun atomicWriteWithCipher(value: T, cipher: Cipher) = withContext(Dispatchers.IO) {
+        val plaintext = json.encodeToString(serializer, value).toByteArray()
+        val encrypted = aead.encryptWithCipher(cipher, plaintext)
+        val tmp = File(file.parent, "${file.name}.tmp")
+        tmp.writeBytes(encrypted)
+        if (!tmp.renameTo(file)) {
+            tmp.delete()
+            throw java.io.IOException("Atomic rename failed for ${file.name}")
+        }
     }
 
     suspend fun delete() = mutex.withLock {

@@ -2,6 +2,7 @@ package io.raccoonwallet.app.core.crypto
 
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.math.RoundingMode
 
 object Hex {
     private val HEX_CHARS = "0123456789abcdef".toCharArray()
@@ -52,13 +53,13 @@ object Hex {
     /** Convert wei (BigInteger) to human-readable ether string. */
     fun weiToEther(wei: BigInteger, decimals: Int = 18, scale: Int = 6): BigDecimal {
         val divisor = BigDecimal.TEN.pow(decimals)
-        return BigDecimal(wei).divide(divisor, scale, BigDecimal.ROUND_HALF_UP)
+        return BigDecimal(wei).divide(divisor, scale, RoundingMode.HALF_UP)
     }
 
     /** Convert ether (decimal string) to wei. LOW-2: use setScale to avoid precision loss. */
     fun etherToWei(ether: String, decimals: Int = 18): BigInteger {
         val multiplier = BigDecimal.TEN.pow(decimals)
-        val wei = BigDecimal(ether).multiply(multiplier).setScale(0, java.math.RoundingMode.DOWN)
+        val wei = BigDecimal(ether).multiply(multiplier).setScale(0, RoundingMode.DOWN)
         return wei.toBigIntegerExact()
     }
 }

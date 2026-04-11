@@ -18,11 +18,16 @@ import io.raccoonwallet.app.core.model.AuthMode
 import io.raccoonwallet.app.core.model.DkgState
 import io.raccoonwallet.app.core.model.FlowError
 import io.raccoonwallet.app.core.model.TransportMode
+import io.raccoonwallet.app.core.storage.AuthResult
+import io.raccoonwallet.app.core.storage.BiometricGate
 import io.raccoonwallet.app.core.storage.KeystoreCipher
 import io.raccoonwallet.app.core.storage.SecretStore
+import io.raccoonwallet.app.core.storage.StoredKeyShare
+import io.raccoonwallet.app.core.storage.Serializers.toBase64
 import io.raccoonwallet.app.core.transport.TransportMessage
 import io.raccoonwallet.app.deps
 import android.app.Activity
+import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -239,7 +244,7 @@ class DkgViewModel(
         if (authMode != AuthMode.NONE) {
             _dkgState.value = DkgState.AwaitingBiometric
         } else {
-            onBiometricSuccess()
+            authenticateAndStore(null)
         }
     }
 
@@ -247,17 +252,50 @@ class DkgViewModel(
         _dkgState.value = DkgState.Failed(FlowError.BiometricDenied(detail = reason))
     }
 
-    /** Called by the screen after BiometricGate.authenticate() succeeds. */
-    fun onBiometricSuccess() {
+    /** Called by the screen with the activity for biometric prompt, or null for NONE mode. */
+    fun authenticateAndStore(activity: FragmentActivity?) {
         viewModelScope.launch {
-            prepareFreshStoresForDkg()
-            if (secretStore == null) {
-                secretStore = app.getSecretStore(authMode)
-            }
-            if (pendingVaultBundle != null) {
-                doStoreVaultBundle()
-            } else {
-                doStoreSignerShares()
+            try {
+                prepareFreshStoresForDkg()
+                if (secretStore == null) {
+                    secretStore = app.getSecretStore(authMode)
+                }
+
+                val encryptCipher: javax.crypto.Cipher? = when (authMode) {
+                    AuthMode.NONE -> null
+                    AuthMode.BIOMETRIC_ONLY -> {
+                        val act = activity ?: throw RuntimeException("Activity required for biometric")
+                        val aead = app.getSecretAead(authMode)
+                        val cipher = aead.createEncryptCipher()
+                        when (val result = BiometricGate.authenticate(act, authMode, cipher)) {
+                            is AuthResult.Success -> result.cipher
+                            is AuthResult.Denied -> {
+                                _dkgState.value = DkgState.Failed(FlowError.BiometricDenied())
+                                return@launch
+                            }
+                        }
+                    }
+                    AuthMode.BIOMETRIC_OR_DEVICE -> {
+                        val act = activity ?: throw RuntimeException("Activity required for biometric")
+                        when (BiometricGate.authenticate(act, authMode)) {
+                            is AuthResult.Success -> null
+                            is AuthResult.Denied -> {
+                                _dkgState.value = DkgState.Failed(FlowError.BiometricDenied())
+                                return@launch
+                            }
+                        }
+                    }
+                }
+
+                if (pendingVaultBundle != null) {
+                    doStoreVaultBundle(encryptCipher)
+                } else {
+                    doStoreSignerShares(encryptCipher)
+                }
+            } catch (e: Exception) {
+                _dkgState.value = DkgState.Failed(FlowError.StorageFailed(
+                    e.message ?: "Authentication or storage failed"
+                ))
             }
         }
     }
@@ -275,38 +313,45 @@ class DkgViewModel(
         preparedFreshStores = true
     }
 
-    private fun doStoreSignerShares() {
-        viewModelScope.launch {
-            _dkgState.value = DkgState.StoringKeys
-            val results = splitResults ?: return@launch
-            val kp = paillierKeyPair ?: return@launch
-            val store = secretStore ?: return@launch
+    private suspend fun doStoreSignerShares(encryptCipher: javax.crypto.Cipher?) {
+        _dkgState.value = DkgState.StoringKeys
+        val results = splitResults ?: return
+        val kp = paillierKeyPair ?: return
+        val store = secretStore ?: return
 
-            try {
-                store.setSignerPaillierPk(kp.publicKey)
-
-                val accounts = results.mapIndexed { i, split ->
-                    store.setKeyShare(i, split.x2)
-                    store.setJointPublicKey(i, split.jointPublicKey)
-                    store.setCkey(i, split.ckey)
-                    Account(
-                        index = i,
-                        address = split.address,
-                        publicKeyCompressed = Base64.encodeToString(
-                            Secp256k1.compressPoint(split.jointPublicKey), Base64.NO_WRAP
+        try {
+            store.writeAll(encryptCipher) {
+                it.copy(
+                    signerPaillierN = kp.publicKey.n.toBase64(),
+                    signerPaillierG = kp.publicKey.g.toBase64(),
+                    shares = results.mapIndexed { i, split ->
+                        StoredKeyShare(
+                            accountIndex = i,
+                            share = split.x2.toBase64(),
+                            jointPublicKey = split.jointPublicKey.toBase64(),
+                            ckey = split.ckey.toBase64()
                         )
-                    )
-                }
-
-                publicStore.completeDkg(accounts, AppMode.SIGNER)
-
-                clearTransientCryptoState()
-                _dkgState.value = DkgState.Complete
-            } catch (e: Exception) {
-                _dkgState.value = DkgState.Failed(FlowError.StorageFailed(
-                    e.message ?: "Failed to store key shares"
-                ))
+                    }
+                )
             }
+
+            val accounts = results.mapIndexed { i, split ->
+                Account(
+                    index = i,
+                    address = split.address,
+                    publicKeyCompressed = Base64.encodeToString(
+                        Secp256k1.compressPoint(split.jointPublicKey), Base64.NO_WRAP
+                    )
+                )
+            }
+            publicStore.completeDkg(accounts, AppMode.SIGNER)
+
+            clearTransientCryptoState()
+            _dkgState.value = DkgState.Complete
+        } catch (e: Exception) {
+            _dkgState.value = DkgState.Failed(FlowError.StorageFailed(
+                e.message ?: "Failed to store key shares"
+            ))
         }
     }
 
@@ -409,70 +454,77 @@ class DkgViewModel(
         }
     }
 
-    private fun doStoreVaultBundle() {
-        viewModelScope.launch {
-            try {
-                _dkgState.value = DkgState.StoringKeys
-                val message = pendingVaultBundle ?: return@launch
-                val store = secretStore ?: return@launch
-                require(message.q1Points.size >= 4) { "Malformed bundle" }
+    private suspend fun doStoreVaultBundle(encryptCipher: javax.crypto.Cipher?) {
+        _dkgState.value = DkgState.StoringKeys
+        val message = pendingVaultBundle ?: return
+        val store = secretStore ?: return
+        require(message.q1Points.size >= 4) { "Malformed bundle" }
 
-                val lambda = BigInteger(1, message.q1Points[0])
-                val mu = BigInteger(1, message.q1Points[1])
-                val paillierN = BigInteger(1, message.q1Points[2])
-                val paillierG = BigInteger(1, message.q1Points[3])
+        try {
+            val lambda = BigInteger(1, message.q1Points[0])
+            val mu = BigInteger(1, message.q1Points[1])
+            val paillierN = BigInteger(1, message.q1Points[2])
+            val paillierG = BigInteger(1, message.q1Points[3])
 
-                require(paillierN.bitLength() >= 2048) { "Paillier modulus too small" }
-                require(paillierN.testBit(0)) { "Paillier modulus must be odd" }
+            require(paillierN.bitLength() >= 2048) { "Paillier modulus too small" }
+            require(paillierN.testBit(0)) { "Paillier modulus must be odd" }
 
-                val paillierSk = PaillierCipher.SecretKey(lambda = lambda, mu = mu)
-                val paillierPk = PaillierCipher.PublicKey(
-                    n = paillierN, nSquared = paillierN.multiply(paillierN), g = paillierG
-                )
+            val paillierPk = PaillierCipher.PublicKey(
+                n = paillierN, nSquared = paillierN.multiply(paillierN), g = paillierG
+            )
 
-                // Validate Paillier key consistency: L(g^lambda mod n^2) * mu mod n == 1
-                val gLambda = paillierPk.g.modPow(lambda, paillierPk.nSquared)
-                val lVal = gLambda.subtract(BigInteger.ONE).divide(paillierN)
-                require(lVal.multiply(mu).mod(paillierN) == BigInteger.ONE) {
-                    "Paillier key consistency check failed"
-                }
-
-                store.setPaillierPublicKey(paillierPk)
-                store.setPaillierSecretKey(paillierSk)
-
-                val count = message.q1Points.size - 4
-                require(count > 0) { "No accounts in bundle" }
-                val accounts = (0 until count).map { i ->
-                    val Q = Secp256k1.decompressPoint(message.q1Points[i + 4])
-                    require(Secp256k1.isOnCurve(Q)) { "Joint public key $i not on curve" }
-                    val address = Secp256k1.pointToEthAddress(Q)
-
-                    store.setJointPublicKey(i, Q)
-
-                    Account(
-                        index = i,
-                        address = address,
-                        publicKeyCompressed = Base64.encodeToString(
-                            message.q1Points[i + 4], Base64.NO_WRAP
-                        )
-                    )
-                }
-
-                publicStore.completeDkg(accounts, AppMode.VAULT)
-                pendingVaultBundle = null
-
-                if (transportMode == TransportMode.NFC) {
-                    _dkgState.value = DkgState.Complete
-                } else {
-                    val ackMessage = TransportMessage.DkgFinalize(ack = true)
-                    val ackFrames = transportBridge.encodeForQr(ackMessage)
-                    _dkgState.value = DkgState.DisplayingAck(ackFrames)
-                }
-            } catch (e: Exception) {
-                _dkgState.value = DkgState.Failed(FlowError.StorageFailed(
-                    e.message ?: "Failed to process shares"
-                ))
+            // Validate Paillier key consistency: L(g^lambda mod n^2) * mu mod n == 1
+            val gLambda = paillierPk.g.modPow(lambda, paillierPk.nSquared)
+            val lVal = gLambda.subtract(BigInteger.ONE).divide(paillierN)
+            require(lVal.multiply(mu).mod(paillierN) == BigInteger.ONE) {
+                "Paillier key consistency check failed"
             }
+
+            val count = message.q1Points.size - 4
+            require(count > 0) { "No accounts in bundle" }
+
+            val qPoints = (0 until count).map { i ->
+                Secp256k1.decompressPoint(message.q1Points[i + 4]).also {
+                    require(Secp256k1.isOnCurve(it)) { "Joint public key $i not on curve" }
+                }
+            }
+
+            store.writeAll(encryptCipher) {
+                it.copy(
+                    paillierN = paillierN.toBase64(),
+                    paillierG = paillierG.toBase64(),
+                    paillierLambda = lambda.toBase64(),
+                    paillierMu = mu.toBase64(),
+                    shares = qPoints.mapIndexed { i, Q ->
+                        StoredKeyShare(accountIndex = i, jointPublicKey = Q.toBase64())
+                    }
+                )
+            }
+
+            val accounts = qPoints.mapIndexed { i, Q ->
+                Account(
+                    index = i,
+                    address = Secp256k1.pointToEthAddress(Q),
+                    publicKeyCompressed = Base64.encodeToString(
+                        message.q1Points[i + 4], Base64.NO_WRAP
+                    )
+                )
+            }
+
+            publicStore.completeDkg(accounts, AppMode.VAULT)
+            pendingVaultBundle = null
+
+            if (transportMode == TransportMode.NFC) {
+                _dkgState.value = DkgState.Complete
+            } else {
+                val ackMessage = TransportMessage.DkgFinalize(ack = true)
+                val ackFrames = transportBridge.encodeForQr(ackMessage)
+                _dkgState.value = DkgState.DisplayingAck(ackFrames)
+            }
+        } catch (e: Exception) {
+            _dkgState.value = DkgState.Failed(FlowError.StorageFailed(
+                e.message ?: "Failed to process shares"
+            ))
         }
     }
 

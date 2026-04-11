@@ -16,7 +16,9 @@ import io.raccoonwallet.app.core.model.FlowError
 import io.raccoonwallet.app.core.model.TransportMode
 import io.raccoonwallet.app.core.model.TxDisplayData
 import io.raccoonwallet.app.core.transport.TransportMessage
-import io.raccoonwallet.app.core.storage.BiometricGate
+import io.raccoonwallet.app.core.storage.BiometricSecretReader
+import io.raccoonwallet.app.core.storage.Serializers.toBigIntegerFromBase64
+import io.raccoonwallet.app.core.storage.Serializers.toECPointFromBase64
 import io.raccoonwallet.app.deps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,23 +79,24 @@ class SignerConfirmViewModel(
                 _state.value = SignerConfirmState.Computing
 
                 val authMode = publicStore.getAuthMode()
-                if (authMode != AuthMode.NONE) {
-                    val act = activity
-                        ?: throw RuntimeException("Activity not available for biometric prompt")
-                    val authed = BiometricGate.authenticate(act, authMode)
-                    if (!authed) {
-                        _state.value = SignerConfirmState.Failed(FlowError.BiometricDenied())
-                        return@launch
-                    }
-                }
                 val secretStore = app.getSecretStore(authMode)
+                val aead = if (authMode == AuthMode.BIOMETRIC_ONLY) app.getSecretAead(authMode) else null
+                val data = BiometricSecretReader.authenticateAndRead(authMode, activity, secretStore, aead)
+                if (data == null) {
+                    _state.value = SignerConfirmState.Failed(FlowError.BiometricDenied())
+                    return@launch
+                }
 
-                val x2 = secretStore.getKeyShare(request.accountIndex)
+                val share = data.shares.find { it.accountIndex == request.accountIndex }
+                val x2 = share?.share?.toBigIntegerFromBase64()
                     ?: throw KeyShareNotFoundException("Key share")
-                val ckey = secretStore.getCkey(request.accountIndex)
+                val ckey = share.ckey?.toBigIntegerFromBase64()
                     ?: throw KeyShareNotFoundException("Ckey")
-                val paillierPk = secretStore.getSignerPaillierPk()
-                    ?: throw KeyShareNotFoundException("Paillier public key")
+                val paillierPk = run {
+                    val n = data.signerPaillierN?.toBigIntegerFromBase64() ?: throw KeyShareNotFoundException("Paillier public key")
+                    val g = data.signerPaillierG?.toBigIntegerFromBase64() ?: throw KeyShareNotFoundException("Paillier public key")
+                    io.raccoonwallet.app.core.crypto.PaillierCipher.PublicKey(n = n, nSquared = n.multiply(n), g = g)
+                }
                 val R1 = Secp256k1.decompressPoint(request.r1Point)
 
                 // Independently verify txHash matches the raw transaction fields

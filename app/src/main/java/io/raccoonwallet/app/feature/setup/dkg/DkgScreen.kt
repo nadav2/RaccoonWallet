@@ -383,17 +383,7 @@ fun DkgScreen(
             is DkgState.AwaitingBiometric -> {
                 val activity = LocalActivity.current as androidx.fragment.app.FragmentActivity
                 LaunchedEffect(Unit) {
-                    if (BiometricGate.canAuthenticate(activity)) {
-                        val success = BiometricGate.authenticate(activity, viewModel.authMode)
-                        if (success) {
-                            viewModel.onBiometricSuccess()
-                        } else {
-                            viewModel.onBiometricFailed("Authentication denied")
-                        }
-                    } else {
-                        // No biometric/PIN available — proceed without auth
-                        viewModel.onBiometricSuccess()
-                    }
+                    viewModel.authenticateAndStore(activity)
                 }
                 CircularProgressIndicator(modifier = Modifier.size(48.dp))
                 Spacer(modifier = Modifier.height(16.dp))

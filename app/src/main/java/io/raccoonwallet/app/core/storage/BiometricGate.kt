@@ -6,11 +6,20 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import io.raccoonwallet.app.core.model.AuthMode
 import kotlinx.coroutines.suspendCancellableCoroutine
+import javax.crypto.Cipher
 import kotlin.coroutines.resume
+
+sealed class AuthResult {
+    data class Success(val cipher: Cipher?) : AuthResult()
+    data object Denied : AuthResult()
+}
 
 /**
  * Triggers biometric authentication so the Android Keystore unlocks
  * the secret store's master key.
+ *
+ * For BIOMETRIC_ONLY: uses CryptoObject for per-operation auth (no time window).
+ * For BIOMETRIC_OR_DEVICE: time-window auth (CryptoObject not supported with DEVICE_CREDENTIAL).
  */
 object BiometricGate {
 
@@ -22,18 +31,22 @@ object BiometricGate {
 
     suspend fun authenticate(
         activity: FragmentActivity,
-        authMode: AuthMode = AuthMode.BIOMETRIC_OR_DEVICE
-    ): Boolean =
+        authMode: AuthMode = AuthMode.BIOMETRIC_OR_DEVICE,
+        cipher: Cipher? = null
+    ): AuthResult =
         suspendCancellableCoroutine { cont ->
             val executor = ContextCompat.getMainExecutor(activity)
 
             val callback = object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    if (cont.isActive) cont.resume(true)
+                    if (cont.isActive) {
+                        val authedCipher = result.cryptoObject?.cipher ?: cipher
+                        cont.resume(AuthResult.Success(authedCipher))
+                    }
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    if (cont.isActive) cont.resume(false)
+                    if (cont.isActive) cont.resume(AuthResult.Denied)
                 }
 
                 override fun onAuthenticationFailed() {
@@ -60,7 +73,11 @@ object BiometricGate {
                 }
                 .build()
 
-            prompt.authenticate(info)
+            if (cipher != null && biometricOnly) {
+                prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
+            } else {
+                prompt.authenticate(info)
+            }
 
             cont.invokeOnCancellation { prompt.cancelAuthentication() }
         }
