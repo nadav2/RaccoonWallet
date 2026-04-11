@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -7,6 +10,22 @@ plugins {
 android {
     namespace = "io.raccoonwallet.app"
     compileSdk = 36
+
+    val keystorePropsFile = rootProject.file("secrets/keystore.properties")
+
+    if (keystorePropsFile.exists()) {
+        val keystoreProps = Properties()
+        keystoreProps.load(FileInputStream(keystorePropsFile))
+
+        signingConfigs {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "io.raccoonwallet.app"
@@ -25,6 +44,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
 
         debug {
