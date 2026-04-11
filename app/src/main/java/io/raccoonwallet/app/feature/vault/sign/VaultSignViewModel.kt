@@ -14,12 +14,14 @@ import io.raccoonwallet.app.core.crypto.LindellSign
 import io.raccoonwallet.app.core.crypto.Secp256k1
 import io.raccoonwallet.app.core.model.AuthMode
 import io.raccoonwallet.app.core.model.ChainRegistry
+import io.raccoonwallet.app.core.model.TokenRegistry
 import io.raccoonwallet.app.core.model.FlowError
 import io.raccoonwallet.app.core.model.SignState
 import io.raccoonwallet.app.core.model.TransactionRecord
 import io.raccoonwallet.app.core.model.TransportMode
 import io.raccoonwallet.app.core.model.TxDisplayData
 import io.raccoonwallet.app.core.network.BroadcastException
+import io.raccoonwallet.app.core.network.Erc20Abi
 import io.raccoonwallet.app.core.model.TxStatus
 import io.raccoonwallet.app.core.crypto.PaillierCipher
 import io.raccoonwallet.app.core.storage.BiometricSecretReader
@@ -99,11 +101,20 @@ class VaultSignViewModel(
                 val feeWei = BigInteger.valueOf(route.gasLimit).multiply(BigInteger(route.maxFeePerGas))
                 val feeFormatted = "${Hex.weiToEther(feeWei)} ${chain.symbol}"
 
+                val erc20Decoded = if (route.data != "0x") Erc20Abi.decodeTransfer(route.data) else null
+                val erc20Token = if (erc20Decoded != null) TokenRegistry.findByAddress(route.chainId, route.to) else null
+
                 val displayData = TxDisplayData(
                     chainName = chain.name,
                     fromAddress = publicStore.getAccounts().getOrNull(route.accountIndex)?.address ?: "",
-                    toAddress = route.to,
-                    value = if (route.data != "0x") "Token Transfer" else "${Hex.weiToEther(BigInteger(route.valueWei))} ${chain.symbol}",
+                    toAddress = erc20Decoded?.first ?: route.to,
+                    value = if (erc20Decoded != null && erc20Token != null) {
+                        "${Hex.weiToEther(erc20Decoded.second, erc20Token.decimals)} ${erc20Token.symbol}"
+                    } else if (route.data != "0x") {
+                        "Token Transfer"
+                    } else {
+                        "${Hex.weiToEther(BigInteger(route.valueWei))} ${chain.symbol}"
+                    },
                     data = route.data,
                     estimatedFee = feeFormatted
                 )

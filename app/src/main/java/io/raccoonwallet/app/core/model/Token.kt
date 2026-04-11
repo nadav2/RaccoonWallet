@@ -22,6 +22,7 @@ data class TokenBalance(
 object TokenRegistry {
 
     private val tokens: List<Token> = listOf(
+
         // Ethereum (1)
         Token("0xdAC17F958D2ee523a2206206994597C13D831ec7", "USDT", "Tether USD", 6, 1L),
         Token("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "USDC", "USD Coin", 6, 1L),
@@ -51,6 +52,11 @@ object TokenRegistry {
         Token("0xd586E7F844cEa2F87f50152665BCbc2C279D8d70", "DAI", "Dai Stablecoin", 18, 43114L)
     )
 
+    private val byChain: Map<Long, List<Token>> = tokens.groupBy { it.chainId }
+
     fun tokensForChain(chainId: Long): List<Token> =
-        tokens.filter { it.chainId == chainId }
+        byChain[chainId] ?: emptyList()
+
+    fun findByAddress(chainId: Long, contractAddress: String): Token? =
+        tokensForChain(chainId).find { it.contractAddress.equals(contractAddress, ignoreCase = true) }
 }

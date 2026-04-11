@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.raccoonwallet.app.core.crypto.Hex
 import io.raccoonwallet.app.core.model.ChainRegistry
+import io.raccoonwallet.app.core.model.TokenRegistry
+import io.raccoonwallet.app.core.network.Erc20Abi
 import io.raccoonwallet.app.ui.components.FlowErrorCard
 import io.raccoonwallet.app.ui.components.RaccoonWalletTopBar
 import io.raccoonwallet.app.ui.components.QrFrameDisplay
@@ -84,9 +86,18 @@ fun SignerConfirmScreen(
                 is SignerConfirmState.ShowingRequest -> {
                     val req = s.request
                     val chain = remember(req.chainId) { ChainRegistry.byChainId(req.chainId) ?: ChainRegistry.ETHEREUM }
-                    val valueFormatted = remember(req.valueWei, req.txData) {
-                        if (req.txData != "0x") "Token Transfer"
-                        else "${Hex.weiToEther(BigInteger(req.valueWei, 10))} ${chain.symbol}"
+                    val (toAddress, valueFormatted) = remember(req.txData, req.to, req.chainId, req.valueWei) {
+                        val decoded = if (req.txData != "0x") Erc20Abi.decodeTransfer(req.txData) else null
+                        val token = if (decoded != null) TokenRegistry.findByAddress(req.chainId, req.to) else null
+                        val to = if (decoded != null) decoded.first else req.to
+                        val value = if (decoded != null && token != null) {
+                            "${Hex.weiToEther(decoded.second, token.decimals)} ${token.symbol}"
+                        } else if (decoded != null) {
+                            "Token Transfer"
+                        } else {
+                            "${Hex.weiToEther(BigInteger(req.valueWei, 10))} ${chain.symbol}"
+                        }
+                        to to value
                     }
                     val feeFormatted = remember(req.gasLimit, req.maxFeePerGas) {
                         val feeWei = BigInteger.valueOf(req.gasLimit).multiply(BigInteger(req.maxFeePerGas, 10))
@@ -102,7 +113,7 @@ fun SignerConfirmScreen(
                                 DetailRow("Connection", s.fingerprint)
                             }
                             DetailRow("Chain", chain.name)
-                            DetailRow("To", req.to.truncateAddress())
+                            DetailRow("To", toAddress.truncateAddress())
                             DetailRow("Value", valueFormatted)
                             DetailRow("Max Fee", feeFormatted)
                             if (req.txData != "0x") {

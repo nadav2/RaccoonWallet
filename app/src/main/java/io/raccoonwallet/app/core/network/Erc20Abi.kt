@@ -19,6 +19,8 @@ object Erc20Abi {
         Keccak256.hash("transfer(address,uint256)".toByteArray(Charsets.US_ASCII)).copyOfRange(0, 4)
     }
 
+    private val TRANSFER_SELECTOR_HEX: String by lazy { Hex.encode(TRANSFER_SELECTOR) }
+
     /**
      * Encode an `eth_call` data payload for `balanceOf(address)`.
      * Returns a hex string with 0x prefix (4 + 32 = 36 bytes = 72 hex chars + "0x").
@@ -40,6 +42,20 @@ object Erc20Abi {
         val paddedAddr = ByteArray(32 - addrBytes.size) + addrBytes
         val paddedAmount = Hex.bigIntToBytesPadded(amount, 32)
         return "0x" + Hex.encode(TRANSFER_SELECTOR) + Hex.encode(paddedAddr) + Hex.encode(paddedAmount)
+    }
+
+    /**
+     * Decode a `transfer(address,uint256)` call from transaction data.
+     * Returns (recipientAddress, amount) or null if the data doesn't match.
+     */
+    fun decodeTransfer(hexData: String): Pair<String, BigInteger>? {
+        val clean = Hex.stripPrefix(hexData)
+        // 4-byte selector + 32-byte address + 32-byte amount = 68 bytes = 136 hex chars
+        if (clean.length < 136) return null
+        if (!clean.regionMatches(0, TRANSFER_SELECTOR_HEX, 0, 8, ignoreCase = true)) return null
+        val addressHex = clean.substring(32, 72) // skip 24 zero-padding chars (12 bytes)
+        val amountHex = clean.substring(72, 136)
+        return Pair("0x$addressHex", BigInteger(amountHex, 16))
     }
 
     /**

@@ -143,12 +143,7 @@ fun VaultSignScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Approve the transaction on the Signer device, then tap again.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(onClick = { viewModel.doNfcTap2(activity) }) {
                         Text("Tap 2: Receive Signature")
