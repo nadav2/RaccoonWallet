@@ -118,7 +118,10 @@ object LindellSign {
         require(r != BigInteger.ZERO) { "r is zero" }
 
         // CRIT-2: Verify Vault's r matches Signer's r — prevents malicious partial sigs
-        require(r == signerR) { "r mismatch: Vault computed $r but Signer used $signerR" }
+        require(ConstantTime.equals(
+            Hex.bigIntToBytesPadded(r, 32),
+            Hex.bigIntToBytesPadded(signerR, 32)
+        )) { "r mismatch between Vault and Signer" }
 
         // Decrypt partial signature
         val sPrime = PaillierCipher.decrypt(paillierSk, paillierPk, cPartial).mod(n)

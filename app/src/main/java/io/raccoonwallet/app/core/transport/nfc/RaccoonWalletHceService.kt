@@ -35,9 +35,13 @@ class RaccoonWalletHceService : HostApduService() {
 
     private val outgoingChunks = AtomicReference<List<ByteArray>?>(null)
     private val outgoingChunkIndex = AtomicInteger(0)
-    private val incomingChunks = AtomicReference<MutableMap<Int, ByteArray>?>(null)
-    private val incomingTotalChunks = AtomicInteger(0)
-    private val incomingPayloadType = AtomicInteger(-1)
+
+    private data class IncomingState(
+        val chunks: Map<Int, ByteArray> = emptyMap(),
+        val totalChunks: Int = 0,
+        val payloadType: Int = -1
+    )
+    private val incoming = AtomicReference(IncomingState())
 
     private val maxResponseData = 248
 
@@ -75,6 +79,7 @@ class RaccoonWalletHceService : HostApduService() {
         val ephPubVault = extractData(apdu)
         val ephPubSigner = sessionCrypto.initiateHandshake()
         sessionCrypto.completeHandshake(ephPubVault)
+        sessionCrypto.getFingerprint()?.let { hceSessionManager.emitSessionFingerprint(it) }
         return ephPubSigner + SW_OK
     }
 
@@ -211,35 +216,38 @@ class RaccoonWalletHceService : HostApduService() {
     }
 
     private fun storeIncomingChunk(chunk: ParsedChunk): Boolean {
-        val currentTotal = incomingTotalChunks.get()
-        val currentType = incomingPayloadType.get()
-        if (currentTotal != 0 && (currentTotal != chunk.totalChunks || currentType != chunk.payloadType.toInt())) {
-            clearIncomingChunks()
+        val current = incoming.get()
+        val next = if (current.totalChunks != 0 &&
+            (current.totalChunks != chunk.totalChunks || current.payloadType != chunk.payloadType.toInt())
+        ) {
+            IncomingState(
+                chunks = mapOf(chunk.chunkIndex to chunk.payload),
+                totalChunks = chunk.totalChunks,
+                payloadType = chunk.payloadType.toInt()
+            )
+        } else {
+            current.copy(
+                chunks = current.chunks + (chunk.chunkIndex to chunk.payload),
+                totalChunks = chunk.totalChunks,
+                payloadType = chunk.payloadType.toInt()
+            )
         }
-        if (incomingChunks.get() == null) {
-            incomingChunks.set(mutableMapOf())
-            incomingTotalChunks.set(chunk.totalChunks)
-            incomingPayloadType.set(chunk.payloadType.toInt())
-        }
-        incomingChunks.get()?.set(chunk.chunkIndex, chunk.payload)
+        incoming.set(next)
         return true
     }
 
     private fun buildIncomingPayload(): ByteArray? {
-        val chunks = incomingChunks.get() ?: return null
-        val total = incomingTotalChunks.get()
-        if (chunks.size != total || total <= 0) return null
+        val state = incoming.get()
+        if (state.chunks.size != state.totalChunks || state.totalChunks <= 0) return null
         val out = ByteArrayOutputStream()
-        for (i in 0 until total) {
-            val piece = chunks[i] ?: return null
+        for (i in 0 until state.totalChunks) {
+            val piece = state.chunks[i] ?: return null
             out.write(piece)
         }
         return out.toByteArray()
     }
 
     private fun clearIncomingChunks() {
-        incomingChunks.set(null)
-        incomingTotalChunks.set(0)
-        incomingPayloadType.set(-1)
+        incoming.set(IncomingState())
     }
 }

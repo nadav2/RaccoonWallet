@@ -153,12 +153,16 @@ class VaultSignViewModel(
         viewModelScope.launch {
             try {
                 _signState.value = SignState.AwaitingTap1
-                transportBridge.nfcSendAndDisconnect(
+                val result = transportBridge.nfcSendAndDisconnect(
                     activity,
                     RaccoonWalletHceService.INS_SIGN_REQUEST,
                     request
                 )
-                _signState.value = SignState.WaitingForApproval
+                if (!result.success) {
+                    _signState.value = SignState.Failed(FlowError.ConnectionFailed())
+                    return@launch
+                }
+                _signState.value = SignState.WaitingForApproval(fingerprint = result.fingerprint)
             } catch (e: Exception) {
                 _signState.value = SignState.Failed(FlowError.TransferInterrupted(
                     detail = "Tap 1: ${e.message}"

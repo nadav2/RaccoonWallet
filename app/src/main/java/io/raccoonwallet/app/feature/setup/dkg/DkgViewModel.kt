@@ -248,10 +248,6 @@ class DkgViewModel(
         }
     }
 
-    fun onBiometricFailed(reason: String) {
-        _dkgState.value = DkgState.Failed(FlowError.BiometricDenied(detail = reason))
-    }
-
     /** Called by the screen with the activity for biometric prompt, or null for NONE mode. */
     fun authenticateAndStore(activity: FragmentActivity?) {
         viewModelScope.launch {

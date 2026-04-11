@@ -26,17 +26,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.raccoonwallet.app.core.crypto.Hex
+import io.raccoonwallet.app.core.model.ChainRegistry
 import io.raccoonwallet.app.ui.components.FlowErrorCard
 import io.raccoonwallet.app.ui.components.RaccoonWalletTopBar
 import io.raccoonwallet.app.ui.components.QrFrameDisplay
 import io.raccoonwallet.app.ui.components.SetupStepIndicator
 import io.raccoonwallet.app.ui.components.truncateAddress
+import java.math.BigInteger
 
 @Composable
 fun SignerConfirmScreen(
@@ -78,17 +82,30 @@ fun SignerConfirmScreen(
                 }
 
                 is SignerConfirmState.ShowingRequest -> {
+                    val req = s.request
+                    val chain = remember(req.chainId) { ChainRegistry.byChainId(req.chainId) ?: ChainRegistry.ETHEREUM }
+                    val valueFormatted = remember(req.valueWei, req.txData) {
+                        if (req.txData != "0x") "Token Transfer"
+                        else "${Hex.weiToEther(BigInteger(req.valueWei, 10))} ${chain.symbol}"
+                    }
+                    val feeFormatted = remember(req.gasLimit, req.maxFeePerGas) {
+                        val feeWei = BigInteger.valueOf(req.gasLimit).multiply(BigInteger(req.maxFeePerGas, 10))
+                        "~${Hex.weiToEther(feeWei)} ${chain.symbol}"
+                    }
+
                     Text("Sign Transaction?", style = MaterialTheme.typography.headlineSmall)
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            DetailRow("Chain", s.displayData.chainName)
-                            DetailRow("From", s.displayData.fromAddress.truncateAddress())
-                            DetailRow("To", s.displayData.toAddress.truncateAddress())
-                            DetailRow("Value", s.displayData.value)
-                            DetailRow("Fee", s.displayData.estimatedFee)
-                            if (s.displayData.data != "0x") {
+                            if (s.fingerprint != null) {
+                                DetailRow("Connection", s.fingerprint)
+                            }
+                            DetailRow("Chain", chain.name)
+                            DetailRow("To", req.to.truncateAddress())
+                            DetailRow("Value", valueFormatted)
+                            DetailRow("Max Fee", feeFormatted)
+                            if (req.txData != "0x") {
                                 DetailRow("Data", "Contract call")
                             }
                         }

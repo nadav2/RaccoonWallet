@@ -186,6 +186,8 @@ class NfcReaderTransport(
         }
     }
 
+    fun getSessionFingerprint(): String? = sessionCrypto.getFingerprint()
+
     fun disconnect() {
         try { isoDep?.close() } catch (_: Exception) {}
         isoDep = null

@@ -94,6 +94,13 @@ class SessionCrypto {
 
     fun isEstablished(): Boolean = sessionKey != null
 
+    fun getFingerprint(): String? {
+        val key = sessionKey ?: return null
+        val fpBytes = hkdfSha256(key, byteArrayOf(), "raccoonwallet-fp".toByteArray(), 2)
+        val numeric = ((fpBytes[0].toInt() and 0xFF) shl 8) or (fpBytes[1].toInt() and 0xFF)
+        return (numeric % 10000).toString().padStart(4, '0')
+    }
+
     fun reset() {
         sessionKey?.fill(0)
         sessionKey = null

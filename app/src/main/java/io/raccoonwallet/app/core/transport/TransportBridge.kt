@@ -18,21 +18,24 @@ class TransportBridge(
 
     // ── NFC Operations ──
 
+    data class NfcSendResult(val success: Boolean, val fingerprint: String?)
+
     /**
      * Wait for NFC tag, establish ECDH session, send a message, then disconnect.
-     * Used for Tap 1 (delivering SignRequest to Signer).
+     * Returns the session fingerprint for MITM verification.
      */
     suspend fun nfcSendAndDisconnect(
         activity: Activity,
         insCode: Byte,
         message: TransportMessage
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): NfcSendResult = withContext(Dispatchers.IO) {
         try {
             val connected = nfcReader.waitForTag(activity)
-            if (!connected) return@withContext false
+            if (!connected) return@withContext NfcSendResult(false, null)
+            val fingerprint = nfcReader.getSessionFingerprint()
             nfcReader.sendOnly(insCode, message)
             nfcReader.disconnect()
-            true
+            NfcSendResult(true, fingerprint)
         } catch (e: Exception) {
             nfcReader.disconnect()
             throw e

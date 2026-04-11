@@ -32,6 +32,15 @@ class HceSessionManager {
         const val SESSION_TIMEOUT_MS = 5 * 60 * 1000L // 5 minutes
     }
 
+    // ── Session fingerprint ──
+
+    private val _sessionFingerprintFlow = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 1)
+    val sessionFingerprintFlow: SharedFlow<String> = _sessionFingerprintFlow.asSharedFlow()
+
+    fun emitSessionFingerprint(fingerprint: String) {
+        _sessionFingerprintFlow.tryEmit(fingerprint)
+    }
+
     // ── Sign request/response ──
 
     private val _signRequestFlow = MutableSharedFlow<PendingSignRequest>(
@@ -114,6 +123,7 @@ class HceSessionManager {
     fun clearSignState() {
         pendingSignResponse.set(null)
         _signRequestFlow.resetReplayCache()
+        _sessionFingerprintFlow.resetReplayCache()
     }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -121,6 +131,7 @@ class HceSessionManager {
         pendingSignResponse.set(null)
         pendingDkgBundle.set(null)
         lastActivityTime.set(0L)
+        _sessionFingerprintFlow.resetReplayCache()
         _signRequestFlow.resetReplayCache()
     }
 }

@@ -117,6 +117,19 @@ fun VaultSignScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("Waiting for Signer approval...", style = MaterialTheme.typography.titleMedium)
+                    if (s is SignState.WaitingForApproval && s.fingerprint != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "Connection: ${s.fingerprint}",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            "Verify this matches on Signer",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "Approve the transaction on the Signer device, then tap again.",

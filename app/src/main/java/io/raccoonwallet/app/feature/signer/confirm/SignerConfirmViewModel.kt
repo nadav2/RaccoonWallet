@@ -14,11 +14,9 @@ import io.raccoonwallet.app.core.crypto.Secp256k1
 import io.raccoonwallet.app.core.model.AuthMode
 import io.raccoonwallet.app.core.model.FlowError
 import io.raccoonwallet.app.core.model.TransportMode
-import io.raccoonwallet.app.core.model.TxDisplayData
 import io.raccoonwallet.app.core.transport.TransportMessage
 import io.raccoonwallet.app.core.storage.BiometricSecretReader
 import io.raccoonwallet.app.core.storage.Serializers.toBigIntegerFromBase64
-import io.raccoonwallet.app.core.storage.Serializers.toECPointFromBase64
 import io.raccoonwallet.app.deps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,7 +29,10 @@ import java.math.BigInteger
 
 sealed class SignerConfirmState {
     data object Loading : SignerConfirmState()
-    data class ShowingRequest(val displayData: TxDisplayData) : SignerConfirmState()
+    data class ShowingRequest(
+        val request: TransportMessage.SignRequest,
+        val fingerprint: String? = null
+    ) : SignerConfirmState()
     data object Computing : SignerConfirmState()
     data class ResponseReady(val transportMode: TransportMode) : SignerConfirmState()
     data class DisplayingQr(val frames: List<String>) : SignerConfirmState()
@@ -63,7 +64,9 @@ class SignerConfirmViewModel(
             try {
                 val pending = hceSessionManager.signRequestFlow.first { it.request.sessionId == sessionId }
                 signRequest = pending.request
-                _state.value = SignerConfirmState.ShowingRequest(pending.request.displayData)
+                // Collect the most recent session fingerprint (emitted during handshake)
+                val fingerprint = hceSessionManager.sessionFingerprintFlow.replayCache.lastOrNull()
+                _state.value = SignerConfirmState.ShowingRequest(pending.request, fingerprint)
             } catch (e: Exception) {
                 _state.value = SignerConfirmState.Failed(FlowError.ProtocolMismatch(
                     detail = "Failed to load request: ${e.message}"
