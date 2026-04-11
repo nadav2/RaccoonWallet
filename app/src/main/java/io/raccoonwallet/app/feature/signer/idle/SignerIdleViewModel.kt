@@ -8,6 +8,7 @@ import io.raccoonwallet.app.core.transport.TransportMessage
 import io.raccoonwallet.app.core.transport.nfc.PendingSignRequest
 import io.raccoonwallet.app.core.transport.qr.QrTransport
 import io.raccoonwallet.app.deps
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -19,7 +20,7 @@ class SignerIdleViewModel(application: Application) : AndroidViewModel(applicati
     private val transportBridge = app.transportBridge
     private val hceSessionManager = app.hceSessionManager
 
-    private val _incomingRequest = MutableSharedFlow<PendingSignRequest>(extraBufferCapacity = 1)
+    private val _incomingRequest = MutableSharedFlow<PendingSignRequest>(replay = 1, extraBufferCapacity = 1)
     val incomingRequest: SharedFlow<PendingSignRequest> = _incomingRequest.asSharedFlow()
 
     var isScanning: Boolean = false
@@ -31,6 +32,11 @@ class SignerIdleViewModel(application: Application) : AndroidViewModel(applicati
                 _incomingRequest.tryEmit(pending)
             }
         }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun clearPendingRequest() {
+        _incomingRequest.resetReplayCache()
     }
 
     fun startQrScan() {

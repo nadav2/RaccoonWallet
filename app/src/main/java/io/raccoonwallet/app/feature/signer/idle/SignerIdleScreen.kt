@@ -47,6 +47,7 @@ fun SignerIdleScreen(
     LaunchedEffect(Unit) {
         viewModel.incomingRequest.collect { pending ->
             showScanner = false
+            viewModel.clearPendingRequest()
             onSignRequest(pending.request.sessionId, pending.transportMode)
         }
     }

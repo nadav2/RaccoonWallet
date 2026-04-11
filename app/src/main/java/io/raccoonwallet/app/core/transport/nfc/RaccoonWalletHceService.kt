@@ -1,7 +1,9 @@
 package io.raccoonwallet.app.core.transport.nfc
 
+import android.content.Intent
 import android.nfc.cardemulation.HostApduService
 import android.os.Bundle
+import io.raccoonwallet.app.MainActivity
 import io.raccoonwallet.app.RaccoonWalletApp
 import io.raccoonwallet.app.core.model.TransportMode
 import io.raccoonwallet.app.core.transport.MessageCodec
@@ -150,6 +152,10 @@ class RaccoonWalletHceService : HostApduService() {
             val message = codec.decode(decrypted)
             if (message is TransportMessage.SignRequest) {
                 hceSessionManager.emitSignRequest(message, TransportMode.NFC)
+                val intent = Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+                startActivity(intent)
             }
             clearIncomingChunks()
             SW_OK
