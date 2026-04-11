@@ -31,8 +31,8 @@ android {
         applicationId = "io.raccoonwallet.app"
         minSdk = 31
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.1.4"
+        versionCode = 15
+        versionName = "0.1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
