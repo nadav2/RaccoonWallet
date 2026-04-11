@@ -21,7 +21,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.math.BigDecimal
 import java.math.BigInteger
+import java.math.RoundingMode
 
 enum class FeeTier { SLOW, NORMAL, FAST, CUSTOM }
 
@@ -421,8 +423,14 @@ class SendViewModel(
     }
 
     companion object {
+        private val GWEI_MULTIPLIER = BigDecimal("1000000000")
+
         fun gweiToWei(gwei: Double): BigInteger =
-            BigInteger.valueOf((gwei * 1_000_000_000).toLong())
+            BigDecimal(gwei.toString())
+                .multiply(GWEI_MULTIPLIER)
+                .setScale(0, RoundingMode.DOWN)
+                .toBigInteger()
+
         fun weiToGwei(wei: BigInteger): String =
             Hex.weiToEther(wei, 9, 2).toPlainString()
     }

@@ -20,6 +20,15 @@ data class EthTransaction(
     val value: BigInteger,
     val data: ByteArray = byteArrayOf()
 ) {
+    init {
+        require(maxPriorityFeePerGas <= maxFeePerGas) {
+            "maxPriorityFeePerGas ($maxPriorityFeePerGas) must be <= maxFeePerGas ($maxFeePerGas)"
+        }
+        require(maxFeePerGas >= BigInteger.ZERO) { "maxFeePerGas must be non-negative" }
+        require(gasLimit > BigInteger.ZERO) { "gasLimit must be positive" }
+        require(value >= BigInteger.ZERO) { "value must be non-negative" }
+    }
+
     /**
      * Compute the hash to be signed (keccak256 of 0x02 || RLP(unsigned fields)).
      */
@@ -36,7 +45,8 @@ data class EthTransaction(
      * Encode the signed transaction as a hex string ready for eth_sendRawTransaction.
      */
     fun encodeSignedHex(signature: LindellSign.EcdsaSignature): String {
-        val yParity = signature.v - 27 // EIP-1559 uses 0/1, not 27/28
+        val yParity = signature.v - 27
+        require(yParity == 0 || yParity == 1) { "Invalid yParity: $yParity (v=${signature.v})" }
 
         val fields = unsignedFields() + listOf(
             Rlp.encodeLong(yParity.toLong()),

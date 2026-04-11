@@ -23,7 +23,7 @@ class EncryptedJsonStore<T>(
     private val serializer: KSerializer<T>,
     private val defaultValue: T
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json { ignoreUnknownKeys = false }
     private val mutex = Mutex()
     private var cached: T? = null
 

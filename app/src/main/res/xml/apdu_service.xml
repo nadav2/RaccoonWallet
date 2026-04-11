@@ -4,7 +4,7 @@
     android:requireDeviceUnlock="true">
     <aid-group android:category="other"
         android:description="@string/aid_group_desc">
-        <!-- Custom AID: F0 "FOX" "WALL" in ASCII hex -->
-        <aid-filter android:name="F0464F5857414C4C" />
+        <!-- Custom AID: F0 "RACOONW" in ASCII hex -->
+        <aid-filter android:name="F052414F4F4F4E57" />
     </aid-group>
 </host-apdu-service>

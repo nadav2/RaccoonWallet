@@ -25,7 +25,7 @@ object KeystoreCipher {
     private const val ANDROID_KEYSTORE = "AndroidKeyStore"
     private const val GCM_TAG_BITS = 128
     private const val GCM_NONCE_LENGTH = 12
-    private const val AUTH_VALIDITY_SECONDS = 30
+    private const val AUTH_VALIDITY_SECONDS = 5
 
     fun ensureKey(alias: String, authMode: AuthMode) {
         val ks = KeyStore.getInstance(ANDROID_KEYSTORE)
@@ -74,7 +74,10 @@ object KeystoreCipher {
     }
 
     private fun applyAuthMode(spec: KeyGenParameterSpec.Builder, authMode: AuthMode) {
-        if (authMode == AuthMode.NONE) return
+        if (authMode == AuthMode.NONE) {
+            spec.setUnlockedDeviceRequired(true)
+            return
+        }
         spec.setUserAuthenticationRequired(true)
             .setUserAuthenticationParameters(AUTH_VALIDITY_SECONDS, authMode.authenticators)
         if (authMode == AuthMode.BIOMETRIC_ONLY) {
@@ -124,7 +127,8 @@ object KeystoreCipher {
         val key = ks.getKey(alias, null)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key)
-        val nonce = cipher.iv // GCM generates a random IV
+        cipher.updateAAD(alias.toByteArray())
+        val nonce = cipher.iv
         val ciphertext = cipher.doFinal(plaintext)
         return nonce + ciphertext
     }
@@ -142,6 +146,7 @@ object KeystoreCipher {
         val key = ks.getKey(alias, null)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, nonce))
+        cipher.updateAAD(alias.toByteArray())
         return cipher.doFinal(ciphertext)
     }
 

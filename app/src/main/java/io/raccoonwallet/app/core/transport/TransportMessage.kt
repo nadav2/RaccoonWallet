@@ -35,7 +35,14 @@ sealed class TransportMessage {
         val chainId: Long,
         val txHash: ByteArray,
         val r1Point: ByteArray,
-        val displayData: TxDisplayData
+        val displayData: TxDisplayData,
+        val nonce: Long = 0,
+        val maxPriorityFeePerGas: String = "0",
+        val maxFeePerGas: String = "0",
+        val gasLimit: Long = 21_000,
+        val to: String = "",
+        val valueWei: String = "0",
+        val txData: String = "0x"
     ) : TransportMessage() {
         override fun equals(other: Any?) =
             other is SignRequest && sessionId == other.sessionId

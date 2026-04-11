@@ -417,29 +417,36 @@ class DkgViewModel(
                 val store = secretStore ?: return@launch
                 require(message.q1Points.size >= 4) { "Malformed bundle" }
 
-                val lambda = BigInteger(message.q1Points[0])
-                val mu = BigInteger(message.q1Points[1])
-                val paillierN = BigInteger(message.q1Points[2])
-                val paillierG = BigInteger(message.q1Points[3])
+                val lambda = BigInteger(1, message.q1Points[0])
+                val mu = BigInteger(1, message.q1Points[1])
+                val paillierN = BigInteger(1, message.q1Points[2])
+                val paillierG = BigInteger(1, message.q1Points[3])
+
+                require(paillierN.bitLength() >= 2048) { "Paillier modulus too small" }
+                require(paillierN.testBit(0)) { "Paillier modulus must be odd" }
 
                 val paillierSk = PaillierCipher.SecretKey(lambda = lambda, mu = mu)
                 val paillierPk = PaillierCipher.PublicKey(
                     n = paillierN, nSquared = paillierN.multiply(paillierN), g = paillierG
                 )
 
+                // Validate Paillier key consistency: L(g^lambda mod n^2) * mu mod n == 1
+                val gLambda = paillierPk.g.modPow(lambda, paillierPk.nSquared)
+                val lVal = gLambda.subtract(BigInteger.ONE).divide(paillierN)
+                require(lVal.multiply(mu).mod(paillierN) == BigInteger.ONE) {
+                    "Paillier key consistency check failed"
+                }
+
                 store.setPaillierPublicKey(paillierPk)
                 store.setPaillierSecretKey(paillierSk)
 
                 val count = message.q1Points.size - 4
                 require(count > 0) { "No accounts in bundle" }
-                require(message.ckeys.size >= count) { "Bundle truncated: ${message.ckeys.size} keys for $count accounts" }
                 val accounts = (0 until count).map { i ->
                     val Q = Secp256k1.decompressPoint(message.q1Points[i + 4])
                     require(Secp256k1.isOnCurve(Q)) { "Joint public key $i not on curve" }
-                    val x1 = BigInteger(message.ckeys[i])
                     val address = Secp256k1.pointToEthAddress(Q)
 
-                    store.setKeyShare(i, x1)
                     store.setJointPublicKey(i, Q)
 
                     Account(
@@ -519,7 +526,8 @@ class DkgViewModel(
 
     /**
      * Build the bundle that Signer sends to Vault.
-     * Contains: Paillier sk + pk + joint public keys + x1 shares.
+     * Contains: Paillier sk + pk + joint public keys.
+     * Key shares (x1) are NOT included — the Vault does not need them for signing.
      */
     private fun buildVaultBundle(
         results: List<LindellDkg.SplitResult>,
@@ -532,9 +540,6 @@ class DkgViewModel(
         q1Points.add(kp.publicKey.g.toByteArray())
         results.forEach { q1Points.add(Secp256k1.compressPoint(it.jointPublicKey)) }
 
-        val ckeys = mutableListOf<ByteArray>()
-        results.forEach { ckeys.add(it.x1.toByteArray()) }
-
-        return TransportMessage.DkgRound2(q1Points = q1Points, ckeys = ckeys)
+        return TransportMessage.DkgRound2(q1Points = q1Points, ckeys = emptyList())
     }
 }

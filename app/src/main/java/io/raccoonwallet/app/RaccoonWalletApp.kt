@@ -10,7 +10,7 @@ import io.raccoonwallet.app.core.storage.PublicStore
 import io.raccoonwallet.app.core.storage.PublicStoreData
 import io.raccoonwallet.app.core.storage.SecretStore
 import io.raccoonwallet.app.core.storage.SecretStoreData
-import io.raccoonwallet.app.core.storage.TinkProvider
+import io.raccoonwallet.app.core.storage.KeystoreProvider
 import io.raccoonwallet.app.core.transport.MessageCodec
 import io.raccoonwallet.app.core.transport.TransportBridge
 import io.raccoonwallet.app.core.transport.nfc.ApduChunker
@@ -41,7 +41,7 @@ class RaccoonWalletApp : Application() {
         return SecretStore(
             EncryptedJsonStore(
                 file = secretStoreFile,
-                aead = TinkProvider.secretAead(authMode),
+                aead = KeystoreProvider.secretAead(authMode),
                 serializer = SecretStoreData.serializer(),
                 defaultValue = SecretStoreData()
             )
@@ -65,7 +65,7 @@ class RaccoonWalletApp : Application() {
         publicStore = PublicStore(
             EncryptedJsonStore(
                 file = publicStoreFile,
-                aead = TinkProvider.publicAead(),
+                aead = KeystoreProvider.publicAead(),
                 serializer = PublicStoreData.serializer(),
                 defaultValue = PublicStoreData()
             )

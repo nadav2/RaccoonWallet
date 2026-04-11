@@ -14,8 +14,10 @@ import java.util.concurrent.atomic.AtomicReference
 class RaccoonWalletHceService : HostApduService() {
 
     companion object {
+        private const val MAX_CHUNKS = 512
+
         val AID = byteArrayOf(
-            0xF0.toByte(), 0x46, 0x4F, 0x58, 0x57, 0x41, 0x4C, 0x4C
+            0xF0.toByte(), 0x52, 0x41, 0x43, 0x4F, 0x4F, 0x4E, 0x57 // F0 "RACOONW"
         )
         val SW_OK = byteArrayOf(0x90.toByte(), 0x00)
         val SW_ERROR = byteArrayOf(0x6F, 0x00)
@@ -193,7 +195,7 @@ class RaccoonWalletHceService : HostApduService() {
         val chunkIndex = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val payloadType = data[4]
         val payload = data.copyOfRange(6, data.size)
-        require(totalChunks > 0) { "Invalid chunk count" }
+        require(totalChunks in 1..MAX_CHUNKS) { "Invalid chunk count: $totalChunks" }
         require(chunkIndex in 0 until totalChunks) { "Chunk index out of range" }
         return ParsedChunk(totalChunks, chunkIndex, payloadType, payload)
     }

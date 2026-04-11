@@ -8,7 +8,7 @@ import io.raccoonwallet.app.core.model.AuthMode
  * - Public store: no authentication requirement
  * - Secret store: authentication based on user's AuthMode choice during setup
  */
-object TinkProvider {
+object KeystoreProvider {
 
     private const val PUBLIC_KEY_ALIAS = "raccoonwallet_public_master"
     private const val SECRET_KEY_ALIAS = "raccoonwallet_secret_master"

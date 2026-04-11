@@ -75,11 +75,11 @@ class VaultSignViewModel(
                     EthSigner.buildTransaction(
                         nonce = BigInteger.valueOf(route.nonce),
                         chainId = route.chainId,
-                        maxPriorityFeePerGas = BigInteger(route.maxPriorityFeePerGas),
-                        maxFeePerGas = BigInteger(route.maxFeePerGas),
+                        maxPriorityFeePerGas = BigInteger(route.maxPriorityFeePerGas, 10),
+                        maxFeePerGas = BigInteger(route.maxFeePerGas, 10),
                         gasLimit = BigInteger.valueOf(route.gasLimit),
                         to = route.to,
-                        value = BigInteger(route.valueWei),
+                        value = BigInteger(route.valueWei, 10),
                         data = if (route.data != "0x") Hex.decode(route.data.removePrefix("0x")) else byteArrayOf()
                     )
                 }
@@ -111,7 +111,14 @@ class VaultSignViewModel(
                     chainId = route.chainId,
                     txHash = hash,
                     r1Point = Secp256k1.compressPoint(prepare.R1),
-                    displayData = displayData
+                    displayData = displayData,
+                    nonce = route.nonce,
+                    maxPriorityFeePerGas = route.maxPriorityFeePerGas,
+                    maxFeePerGas = route.maxFeePerGas,
+                    gasLimit = route.gasLimit,
+                    to = route.to,
+                    valueWei = route.valueWei,
+                    txData = route.data
                 )
 
                 _signState.value = SignState.ChoosingTransport
@@ -245,8 +252,8 @@ class VaultSignViewModel(
                     ?: throw RuntimeException("Joint public key not found")
 
                 val r2 = Secp256k1.decompressPoint(response.r2Point)
-                val cPartial = BigInteger(response.cPartial)
-                val signerR = BigInteger(response.signerR)
+                val cPartial = BigInteger(1, response.cPartial)
+                val signerR = BigInteger(1, response.signerR)
                 val localK1 = k1 ?: throw RuntimeException("k1 not found")
                 val localTxHash = txHash ?: throw RuntimeException("txHash not found")
                 val localTx = ethTransaction ?: throw RuntimeException("Transaction not found")

@@ -31,7 +31,7 @@ object Bip39 {
     fun validateMnemonic(words: List<String>): Boolean {
         return try {
             MnemonicCode.INSTANCE.check(words)
-            words.size == 12
+            words.size == 12 || words.size == 24
         } catch (_: Exception) {
             false
         }

@@ -25,6 +25,7 @@ object Hex {
         return ByteArray(clean.length / 2) { i ->
             val hi = Character.digit(clean[i * 2], 16)
             val lo = Character.digit(clean[i * 2 + 1], 16)
+            require(hi >= 0 && lo >= 0) { "Invalid hex character at position ${i * 2}" }
             ((hi shl 4) or lo).toByte()
         }
     }

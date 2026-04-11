@@ -7,6 +7,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import io.raccoonwallet.app.nav.SignerConfirm
+import io.raccoonwallet.app.core.crypto.EthSigner
+import io.raccoonwallet.app.core.crypto.Hex
 import io.raccoonwallet.app.core.crypto.LindellSign
 import io.raccoonwallet.app.core.crypto.Secp256k1
 import io.raccoonwallet.app.core.model.AuthMode
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.math.BigInteger
 
 sealed class SignerConfirmState {
     data object Loading : SignerConfirmState()
@@ -92,6 +95,24 @@ class SignerConfirmViewModel(
                 val paillierPk = secretStore.getSignerPaillierPk()
                     ?: throw KeyShareNotFoundException("Paillier public key")
                 val R1 = Secp256k1.decompressPoint(request.r1Point)
+
+                // Independently verify txHash matches the raw transaction fields
+                val recomputedHash = withContext(Dispatchers.Default) {
+                    val tx = EthSigner.buildTransaction(
+                        nonce = BigInteger.valueOf(request.nonce),
+                        chainId = request.chainId,
+                        maxPriorityFeePerGas = BigInteger(request.maxPriorityFeePerGas, 10),
+                        maxFeePerGas = BigInteger(request.maxFeePerGas, 10),
+                        gasLimit = BigInteger.valueOf(request.gasLimit),
+                        to = request.to,
+                        value = BigInteger(request.valueWei, 10),
+                        data = if (request.txData != "0x") Hex.decode(request.txData.removePrefix("0x")) else byteArrayOf()
+                    )
+                    tx.signingHash()
+                }
+                require(recomputedHash.contentEquals(request.txHash)) {
+                    "Transaction hash mismatch — Vault's txHash does not match raw transaction fields"
+                }
 
                 val result = withContext(Dispatchers.Default) {
                     LindellSign.signerComputePartial(

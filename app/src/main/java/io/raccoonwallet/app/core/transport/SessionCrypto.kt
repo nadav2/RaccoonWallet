@@ -2,6 +2,7 @@ package io.raccoonwallet.app.core.transport
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import io.raccoonwallet.app.core.crypto.ConstantTime
 import java.security.KeyPairGenerator
 import java.security.SecureRandom
 import java.security.interfaces.ECPrivateKey
@@ -44,12 +45,15 @@ class SessionCrypto {
         val otherSalt = otherPayload.copyOfRange(0, 16)
         val otherPubKeyBytes = otherPayload.copyOfRange(16, otherPayload.size)
 
-        // Combine both salts (XOR) so both sides contribute
-        val combinedSalt = ByteArray(16)
-        for (i in 0 until 16) {
-            combinedSalt[i] = (sessionSalt[i].toInt() xor otherSalt[i].toInt()).toByte()
-        }
-        sessionSalt = combinedSalt
+        // Sort salts lexicographically for deterministic combination regardless of role
+        val (lo, hi) = if (compareSalts(sessionSalt, otherSalt) <= 0)
+            Pair(sessionSalt, otherSalt) else Pair(otherSalt, sessionSalt)
+        sessionSalt = hkdfSha256(
+            lo + hi,
+            byteArrayOf(),
+            "raccoonwallet-salt".toByteArray(),
+            16
+        )
 
         val otherPubKey = decodeEcPublicKey(otherPubKeyBytes)
         val ka = KeyAgreement.getInstance("ECDH")
@@ -57,7 +61,7 @@ class SessionCrypto {
         ka.doPhase(otherPubKey, true)
         val sharedSecret = ka.generateSecret()
 
-        sessionKey = hkdfSha256(sharedSecret, combinedSalt, "raccoonwallet-nfc".toByteArray(), 32)
+        sessionKey = hkdfSha256(sharedSecret, sessionSalt, "raccoonwallet-nfc".toByteArray(), 32)
         ephemeralPrivateKey = null
     }
 
@@ -75,10 +79,9 @@ class SessionCrypto {
         require(data.size > 12) { "Encrypted data too short" }
         val receivedNonce = data.copyOfRange(0, 12)
 
-        // CRIT-4: Validate nonce matches expected counter — prevents replay attacks
         val expectedNonce = buildNonce(decryptCounter)
-        require(receivedNonce.contentEquals(expectedNonce)) {
-            "Nonce mismatch — possible replay attack (expected counter $decryptCounter)"
+        require(ConstantTime.equals(receivedNonce, expectedNonce)) {
+            "Nonce mismatch — possible replay attack"
         }
 
         val ciphertext = data.copyOfRange(12, data.size)
@@ -137,6 +140,14 @@ class SessionCrypto {
             params.init(ECGenParameterSpec("secp256r1"))
             params.getParameterSpec(java.security.spec.ECParameterSpec::class.java)
         }
+    }
+
+    private fun compareSalts(a: ByteArray, b: ByteArray): Int {
+        for (i in a.indices) {
+            val cmp = (a[i].toInt() and 0xFF) - (b[i].toInt() and 0xFF)
+            if (cmp != 0) return cmp
+        }
+        return 0
     }
 
     private fun hkdfSha256(

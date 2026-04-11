@@ -27,8 +27,8 @@ object Secp256k1 {
     fun randomScalar(): BigInteger {
         var k: BigInteger
         do {
-            k = BigInteger(N.bitLength(), secureRandom).mod(N)
-        } while (k == BigInteger.ZERO)
+            k = BigInteger(N.bitLength(), secureRandom)
+        } while (k >= N || k == BigInteger.ZERO)
         return k
     }
 

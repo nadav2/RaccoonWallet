@@ -18,6 +18,7 @@ class ApduChunker(maxApduData: Int = 250) {
 
     fun chunk(payload: ByteArray, payloadType: Byte): List<ByteArray> {
         val totalChunks = (payload.size + maxChunkData - 1) / maxChunkData
+        require(totalChunks <= Short.MAX_VALUE) { "Payload too large: $totalChunks chunks exceeds max" }
         val chunks = mutableListOf<ByteArray>()
 
         for (i in 0 until totalChunks) {

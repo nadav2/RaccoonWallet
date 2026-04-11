@@ -17,6 +17,10 @@ class NfcReaderTransport(
     private val chunker: ApduChunker,
     private val codec: MessageCodec
 ) {
+    companion object {
+        const val MAX_CHUNKS = 512
+    }
+
     private var isoDep: IsoDep? = null
     private val sessionCrypto = SessionCrypto()
 
@@ -136,12 +140,11 @@ class NfcReaderTransport(
         val firstPayload = firstResponse.copyOfRange(0, firstResponse.size - 2)
         require(firstPayload.size >= 2) { "Poll response too short" }
 
-        // HCE always prepends a 2-byte chunk count header
         val totalChunks = ((firstPayload[0].toInt() and 0xFF) shl 8) or
             (firstPayload[1].toInt() and 0xFF)
+        require(totalChunks in 1..MAX_CHUNKS) { "Invalid chunk count: $totalChunks" }
         val allChunks = mutableListOf(firstPayload.copyOfRange(2, firstPayload.size))
 
-        // Fetch remaining chunks if multi-part
         for (i in 1 until totalChunks) {
             val resp = iso.transceive(buildApdu(RaccoonWalletHceService.INS_CHUNK_CONTINUE, byteArrayOf()))
             if (!isSwOk(resp) || resp.size <= 2) {
@@ -177,13 +180,12 @@ class NfcReaderTransport(
         val firstPayload = firstResponse.copyOfRange(0, firstResponse.size - 2)
         require(firstPayload.size >= 2) { "Response too short" }
 
-        // First 2 bytes = total chunk count, rest = chunk 0 data
         val totalChunks = ((firstPayload[0].toInt() and 0xFF) shl 8) or
             (firstPayload[1].toInt() and 0xFF)
+        require(totalChunks in 1..MAX_CHUNKS) { "Invalid chunk count: $totalChunks" }
         val allChunks = mutableListOf(firstPayload.copyOfRange(2, firstPayload.size))
         onProgress(1f / totalChunks)
 
-        // Fetch remaining chunks
         for (i in 1 until totalChunks) {
             val resp = iso.transceive(buildApdu(RaccoonWalletHceService.INS_CHUNK_CONTINUE, byteArrayOf()))
             if (!isSwOk(resp) || resp.size <= 2) {

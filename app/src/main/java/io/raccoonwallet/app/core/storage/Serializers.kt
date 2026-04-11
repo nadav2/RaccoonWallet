@@ -14,7 +14,7 @@ object Serializers {
         Base64.encodeToString(this.toByteArray(), Base64.NO_WRAP)
 
     fun String.toBigIntegerFromBase64(): BigInteger =
-        BigInteger(Base64.decode(this, Base64.NO_WRAP))
+        BigInteger(1, Base64.decode(this, Base64.NO_WRAP))
 
     fun ECPoint.toBase64(): String =
         Base64.encodeToString(Secp256k1.compressPoint(this), Base64.NO_WRAP)
