@@ -61,7 +61,7 @@ data class SendUiState(
     val availableTokens: List<Token> = emptyList(),
     val tokenBalance: String = "0",
     val fee: FeeState = FeeState(),
-    val nonce: Long = 0,
+    val nonce: Long? = null,
     val addressError: String? = null,
     val amountError: String? = null,
     val canSubmit: Boolean = false,
@@ -278,7 +278,7 @@ class SendViewModel(
         val fieldsValid = state.toAddress.matches(Regex("^0x[0-9a-fA-F]{40}$"))
             && state.amount.toDoubleOrNull()?.let { it > 0 } ?: false
             && state.addressError == null && state.amountError == null
-            && state.nonce > 0L
+            && state.nonce != null
 //        val fieldsValid = true
 
         _uiState.value = state.copy(
@@ -375,12 +375,11 @@ class SendViewModel(
                     gasLimit = gasLimit.toLong(),
                     isEstimating = false,
                 ),
-                canSubmit = _uiState.value.fee.slowFee != null
             )
 
-            // Refresh fee tiers with the actual gas limit
+            // Refresh fee tiers with the actual gas limit — applySelectedFee
+            // inside fetchFeeTiers will set canSubmit once tiers are available.
             fetchFeeTiers(state.chainId)
-            applySelectedFee()
         } catch (_: Exception) {
             _uiState.value = _uiState.value.copy(
                 fee = _uiState.value.fee.copy(
@@ -415,7 +414,7 @@ class SendViewModel(
             to = to,
             valueWei = valueWei,
             data = data,
-            nonce = state.nonce,
+            nonce = state.nonce!!,
             gasLimit = state.fee.gasLimit,
             maxFeePerGas = state.fee.maxFeePerGas,
             maxPriorityFeePerGas = state.fee.maxPriorityFeePerGas
