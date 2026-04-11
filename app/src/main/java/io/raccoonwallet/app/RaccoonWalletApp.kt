@@ -60,6 +60,22 @@ class RaccoonWalletApp : Application() {
         publicStore.deleteAll()
     }
 
+    /**
+     * Re-create the public store after a full reset that deleted Keystore keys.
+     * Without this, the existing [publicStore] holds a stale [KeystoreAead] whose
+     * underlying AES key no longer exists, causing a crash on the next write.
+     */
+    fun reinitPublicStore() {
+        publicStore = PublicStore(
+            EncryptedJsonStore(
+                file = publicStoreFile,
+                aead = KeystoreProvider.publicAead(),
+                serializer = PublicStoreData.serializer(),
+                defaultValue = PublicStoreData()
+            )
+        )
+    }
+
     override fun onCreate() {
         super.onCreate()
 

@@ -33,6 +33,7 @@ class MainActivity : FragmentActivity() {
             runBlocking {
                 IntegrityChecker.fullReset(app)
             }
+            app.reinitPublicStore()
         }
 
         app.appSettings.refreshDiagnostics()

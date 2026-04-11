@@ -187,7 +187,10 @@ object KeystoreCipher {
     private fun loadKey(alias: String): SecretKey {
         val ks = KeyStore.getInstance(ANDROID_KEYSTORE)
         ks.load(null)
-        return ks.getKey(alias, null) as SecretKey
+        val key = ks.getKey(alias, null)
+            ?: throw java.security.KeyStoreException("Key alias '$alias' not found in Keystore")
+        return key as? SecretKey
+            ?: throw java.security.KeyStoreException("Key alias '$alias' is not an AES SecretKey")
     }
 
     fun deleteKey(alias: String) {
