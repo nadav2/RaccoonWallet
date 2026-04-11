@@ -93,6 +93,7 @@ class DkgViewModel(
     private var paillierKeyPair: PaillierCipher.KeyPair? = null
     private var splitResults: List<LindellDkg.SplitResult>? = null
     private var tapEntropyCollector: TapEntropyCollector? = null
+    private var entropyReturnToSeed: Boolean = false
 
     // ══════════════════════════════════════
     // ── Signer Flow (generates seed) ──
@@ -111,8 +112,8 @@ class DkgViewModel(
         generateSignerMnemonic()
     }
 
-    fun startEntropyCollection() {
-        mnemonic = null
+    fun startEntropyFromSeedScreen() {
+        entropyReturnToSeed = true
         clearTapEntropy()
         tapEntropyCollector = TapEntropyCollector()
         _dkgState.value = DkgState.CollectingEntropy()
@@ -142,13 +143,21 @@ class DkgViewModel(
 
     fun finalizeEntropyCollection() {
         val extraEntropy = tapEntropyCollector?.buildEntropy() ?: return
+        entropyReturnToSeed = false
         clearTapEntropy()
         generateSignerMnemonic(extraEntropy)
     }
 
     fun cancelEntropyCollection() {
+        val returnToSeed = entropyReturnToSeed
+        val words = mnemonic
+        entropyReturnToSeed = false
         clearTapEntropy()
-        _dkgState.value = DkgState.ChoosingSeedGeneration
+        if (returnToSeed && words != null) {
+            _dkgState.value = DkgState.ShowingSeed(words)
+        } else {
+            _dkgState.value = DkgState.ChoosingSeedGeneration
+        }
     }
 
     fun showImportSeed() {
@@ -613,6 +622,7 @@ class DkgViewModel(
         mnemonic = null
         paillierKeyPair = null
         splitResults = null
+        entropyReturnToSeed = false
         clearTapEntropy()
     }
 

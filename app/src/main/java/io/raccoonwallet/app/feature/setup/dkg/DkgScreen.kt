@@ -1,12 +1,25 @@
 package io.raccoonwallet.app.feature.setup.dkg
 
 import androidx.activity.compose.LocalActivity
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -30,6 +43,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -50,16 +65,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.raccoonwallet.app.core.crypto.TapEntropyCollector
 import io.raccoonwallet.app.core.model.AuthMode
@@ -149,7 +173,6 @@ fun DkgScreen(
             is DkgState.ChoosingSeedGeneration -> {
                 SeedGenerationPicker(
                     onGenerateNormally = { viewModel.startStandardSeedGeneration() },
-                    onFunMode = { viewModel.startEntropyCollection() },
                     onImport = { viewModel.showImportSeed() }
                 )
             }
@@ -183,7 +206,8 @@ fun DkgScreen(
                 SeedBackupView(
                     words = s.words,
                     onConfirmed = { viewModel.onSeedConfirmed() },
-                    onImport = { viewModel.showImportSeed() }
+                    onImport = { viewModel.showImportSeed() },
+                    onAddEntropy = { viewModel.startEntropyFromSeedScreen() }
                 )
             }
 
@@ -534,7 +558,6 @@ fun DkgScreen(
 @Composable
 private fun SeedGenerationPicker(
     onGenerateNormally: () -> Unit,
-    onFunMode: () -> Unit,
     onImport: () -> Unit
 ) {
     Text("Create or restore wallet", style = MaterialTheme.typography.headlineSmall)
@@ -549,21 +572,17 @@ private fun SeedGenerationPicker(
     Button(onClick = onGenerateNormally, modifier = Modifier.fillMaxWidth()) {
         Text("Generate recovery phrase")
     }
-    Spacer(modifier = Modifier.height(12.dp))
-    OutlinedButton(onClick = onFunMode, modifier = Modifier.fillMaxWidth()) {
-        Text("Fun mode: add tap entropy")
-    }
-    Spacer(modifier = Modifier.height(12.dp))
-    Text(
-        "Fun mode mixes your taps into the seed, but security still comes from the device RNG.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
     Spacer(modifier = Modifier.height(20.dp))
     TextButton(onClick = onImport) {
         Text("I already have a recovery phrase")
     }
 }
+
+private class TapRipple(
+    val center: Offset,
+    val scale: Animatable<Float, AnimationVector1D> = Animatable(0f),
+    val alpha: Animatable<Float, AnimationVector1D> = Animatable(0.6f)
+)
 
 @Composable
 private fun TapEntropyView(
@@ -575,11 +594,29 @@ private fun TapEntropyView(
     onBack: () -> Unit
 ) {
     val requiredTaps = TapEntropyCollector.DEFAULT_TARGET_TAP_COUNT
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val ripples = remember { mutableStateListOf<TapRipple>() }
 
-    Text("Fun mode entropy", style = MaterialTheme.typography.headlineSmall)
+    // Animated background color shifts as progress increases
+    val baseColor = MaterialTheme.colorScheme.primaryContainer
+    val bgColor by animateColorAsState(
+        targetValue = lerp(
+            baseColor.copy(alpha = 0.3f),
+            baseColor,
+            progress
+        ),
+        animationSpec = tween(300),
+        label = "entropy_bg"
+    )
+    val borderColor = MaterialTheme.colorScheme.primary
+    val rippleColor = MaterialTheme.colorScheme.primary
+
+    Text("Add Entropy", style = MaterialTheme.typography.headlineSmall)
     Spacer(modifier = Modifier.height(8.dp))
     Text(
-        "Tap the pad to stir in extra entropy. Your taps are mixed into the mnemonic in addition to secure device randomness.",
+        "Tap the pad to stir in extra randomness. Your taps are mixed into the seed alongside secure device randomness.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -590,10 +627,10 @@ private fun TapEntropyView(
             .fillMaxWidth()
             .height(260.dp)
             .clip(RoundedCornerShape(28.dp))
-            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
+            .background(bgColor)
             .border(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                color = borderColor.copy(alpha = 0.4f),
                 shape = RoundedCornerShape(28.dp)
             )
             .pointerInput(onTap) {
@@ -605,18 +642,61 @@ private fun TapEntropyView(
                         size.height.toFloat(),
                         System.nanoTime()
                     )
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    // Spawn ripple
+                    val ripple = TapRipple(center = offset)
+                    ripples.add(ripple)
+                    scope.launch {
+                        kotlinx.coroutines.coroutineScope {
+                            launch { ripple.scale.animateTo(3f, tween(600)) }
+                            launch { ripple.alpha.animateTo(0f, tween(600)) }
+                        }
+                        ripples.remove(ripple)
+                    }
                 }
             },
         contentAlignment = Alignment.Center
     ) {
+        // Ripple canvas
+        val rippleRadiusPx = with(density) { 40.dp.toPx() }
+        val strokeWidthPx = with(density) { 2.dp.toPx() }
+        Canvas(modifier = Modifier.matchParentSize()) {
+            for (ripple in ripples) {
+                drawCircle(
+                    color = rippleColor.copy(alpha = ripple.alpha.value),
+                    radius = rippleRadiusPx * ripple.scale.value,
+                    center = ripple.center,
+                    style = Stroke(width = strokeWidthPx)
+                )
+            }
+        }
+
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Tap anywhere", style = MaterialTheme.typography.titleLarge)
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "$tapCount / $requiredTaps taps collected",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Animated counter
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AnimatedContent(
+                    targetState = tapCount,
+                    transitionSpec = {
+                        (slideInVertically { it } togetherWith slideOutVertically { -it })
+                            .using(SizeTransform(clip = false))
+                    },
+                    label = "tap_counter"
+                ) { count ->
+                    Text(
+                        text = "$count",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Text(
+                    " / $requiredTaps taps",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 
@@ -642,7 +722,7 @@ private fun TapEntropyView(
     }
     Spacer(modifier = Modifier.height(8.dp))
     TextButton(onClick = onBack) {
-        Text("Back to setup options")
+        Text("Cancel")
     }
 }
 
@@ -651,8 +731,17 @@ private fun TapEntropyView(
 private fun SeedBackupView(
     words: List<String>,
     onConfirmed: () -> Unit,
-    onImport: () -> Unit
+    onImport: () -> Unit,
+    onAddEntropy: () -> Unit
 ) {
+    // Resets to hidden when a new word list is generated (e.g. after adding entropy)
+    var revealed by remember(words) { mutableStateOf(false) }
+    val blurRadius by animateFloatAsState(
+        targetValue = if (revealed) 0f else 16f,
+        animationSpec = tween(durationMillis = 400),
+        label = "blur_radius"
+    )
+
     Text("Write down your recovery phrase", style = MaterialTheme.typography.headlineSmall)
     Spacer(modifier = Modifier.height(8.dp))
     Text(
@@ -662,35 +751,98 @@ private fun SeedBackupView(
     )
     Spacer(modifier = Modifier.height(24.dp))
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        FlowRow(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (blurRadius > 0f) Modifier.blur(blurRadius.dp)
+                    else Modifier
+                )
         ) {
-            words.forEachIndexed { index, word ->
-                Card(
-                    colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+            FlowRow(
+                modifier = Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                words.forEachIndexed { index, word ->
+                    Card(
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Text(
+                            text = "${index + 1}. $word",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+            }
+        }
+
+        // Overlay scrim when not revealed
+        AnimatedVisibility(
+            visible = !revealed,
+            exit = fadeOut(tween(300)),
+            modifier = Modifier.matchParentSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
+                    .pointerInput(Unit) { detectTapGestures { revealed = true } },
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Outlined.VisibilityOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                ) {
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "${index + 1}. $word",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.bodyLarge
+                        "Tap to reveal",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
     }
 
-    Spacer(modifier = Modifier.height(32.dp))
-    Button(onClick = onConfirmed, modifier = Modifier.fillMaxWidth()) {
-        Text("I've written it down")
+    Spacer(modifier = Modifier.height(24.dp))
+
+    if (revealed) {
+        Button(onClick = onConfirmed, modifier = Modifier.fillMaxWidth()) {
+            Text("I've written it down")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
     }
-    Spacer(modifier = Modifier.height(8.dp))
-    TextButton(onClick = onImport) {
-        Text("I already have a recovery phrase")
+
+    OutlinedButton(onClick = onAddEntropy, modifier = Modifier.fillMaxWidth()) {
+        Icon(
+            imageVector = Icons.Default.Shuffle,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text("Add Entropy")
+    }
+    Spacer(modifier = Modifier.height(4.dp))
+    Text(
+        "Mix your taps into the seed for extra randomness",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    if (revealed) {
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(onClick = onImport) {
+            Text("I already have a recovery phrase")
+        }
     }
 }
 
@@ -877,7 +1029,7 @@ private fun AuthModeOption(
 /** Animated checkmark that scales in with a bounce on the Complete screen */
 @Composable
 private fun SuccessAnimation() {
-    val scale = remember { androidx.compose.animation.core.Animatable(0f) }
+    val scale = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         scale.animateTo(
             targetValue = 1f,
