@@ -89,7 +89,6 @@ class RaccoonWalletApp : Application() {
             versionName = versionName,
             resetAction = ::resetAction
         )
-        appSettings.refreshDiagnostics()
     }
 }
 

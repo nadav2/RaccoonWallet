@@ -7,7 +7,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
@@ -55,8 +58,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.raccoonwallet.app.core.crypto.TapEntropyCollector
 import io.raccoonwallet.app.core.model.AuthMode
 import io.raccoonwallet.app.core.model.DkgState
 import io.raccoonwallet.app.core.model.TransportMode
@@ -66,6 +71,7 @@ import io.raccoonwallet.app.ui.components.AnimatedQrDisplay
 import io.raccoonwallet.app.ui.components.FlowErrorCard
 import io.raccoonwallet.app.ui.components.NfcWaitHint
 import io.raccoonwallet.app.ui.components.QrScanner
+import io.raccoonwallet.app.ui.components.SecureWindowEffect
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,6 +86,8 @@ fun DkgScreen(
     val deviceHasBiometric = remember(activity) {
         activity?.let { BiometricGate.hasBiometric(it) } ?: false
     }
+
+    SecureWindowEffect(enabled = true)
 
     val canGoBack = state !is DkgState.StoringKeys && state !is DkgState.Complete
     val showCancelDialog = remember { mutableStateOf(false) }
@@ -136,6 +144,39 @@ fun DkgScreen(
         when (val s = state) {
             is DkgState.Idle -> {
                 CircularProgressIndicator()
+            }
+
+            is DkgState.ChoosingSeedGeneration -> {
+                SeedGenerationPicker(
+                    onGenerateNormally = { viewModel.startStandardSeedGeneration() },
+                    onFunMode = { viewModel.startEntropyCollection() },
+                    onImport = { viewModel.showImportSeed() }
+                )
+            }
+
+            is DkgState.CollectingEntropy -> {
+                TapEntropyView(
+                    tapCount = s.tapCount,
+                    progress = s.progress,
+                    isReady = s.isReady,
+                    onTap = { xPx, yPx, widthPx, heightPx, eventTimeNanos ->
+                        viewModel.recordEntropyTap(
+                            xPx = xPx,
+                            yPx = yPx,
+                            widthPx = widthPx,
+                            heightPx = heightPx,
+                            eventTimeNanos = eventTimeNanos
+                        )
+                    },
+                    onContinue = { viewModel.finalizeEntropyCollection() },
+                    onBack = { viewModel.cancelEntropyCollection() }
+                )
+            }
+
+            is DkgState.GeneratingSeed -> {
+                CircularProgressIndicator(modifier = Modifier.size(48.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Generating recovery phrase...")
             }
 
             is DkgState.ShowingSeed -> {
@@ -196,7 +237,7 @@ fun DkgScreen(
                 TextButton(
                     onClick = { viewModel.startSignerDkg() }
                 ) {
-                    Text("Generate new wallet instead")
+                    Text("Back to setup options")
                 }
             }
 
@@ -491,6 +532,122 @@ fun DkgScreen(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
+private fun SeedGenerationPicker(
+    onGenerateNormally: () -> Unit,
+    onFunMode: () -> Unit,
+    onImport: () -> Unit
+) {
+    Text("Create or restore wallet", style = MaterialTheme.typography.headlineSmall)
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        "This setup screen is protected from screenshots while you generate or import your recovery phrase.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(modifier = Modifier.height(24.dp))
+
+    Button(onClick = onGenerateNormally, modifier = Modifier.fillMaxWidth()) {
+        Text("Generate recovery phrase")
+    }
+    Spacer(modifier = Modifier.height(12.dp))
+    OutlinedButton(onClick = onFunMode, modifier = Modifier.fillMaxWidth()) {
+        Text("Fun mode: add tap entropy")
+    }
+    Spacer(modifier = Modifier.height(12.dp))
+    Text(
+        "Fun mode mixes your taps into the seed, but security still comes from the device RNG.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(modifier = Modifier.height(20.dp))
+    TextButton(onClick = onImport) {
+        Text("I already have a recovery phrase")
+    }
+}
+
+@Composable
+private fun TapEntropyView(
+    tapCount: Int,
+    progress: Float,
+    isReady: Boolean,
+    onTap: (Float, Float, Float, Float, Long) -> Unit,
+    onContinue: () -> Unit,
+    onBack: () -> Unit
+) {
+    val requiredTaps = TapEntropyCollector.DEFAULT_TARGET_TAP_COUNT
+
+    Text("Fun mode entropy", style = MaterialTheme.typography.headlineSmall)
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        "Tap the pad to stir in extra entropy. Your taps are mixed into the mnemonic in addition to secure device randomness.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(modifier = Modifier.height(24.dp))
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(260.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                shape = RoundedCornerShape(28.dp)
+            )
+            .pointerInput(onTap) {
+                detectTapGestures { offset ->
+                    onTap(
+                        offset.x,
+                        offset.y,
+                        size.width.toFloat(),
+                        size.height.toFloat(),
+                        System.nanoTime()
+                    )
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Tap anywhere", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "$tapCount / $requiredTaps taps collected",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(20.dp))
+    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        if (isReady) {
+            "Enough entropy captured. Generate your recovery phrase when ready."
+        } else {
+            "Keep tapping until the meter is full."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(modifier = Modifier.height(24.dp))
+    Button(
+        onClick = onContinue,
+        enabled = isReady,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text("Generate recovery phrase")
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    TextButton(onClick = onBack) {
+        Text("Back to setup options")
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 private fun SeedBackupView(
     words: List<String>,
     onConfirmed: () -> Unit,
@@ -617,7 +774,11 @@ private fun dkgStep(state: DkgState, isVault: Boolean): Int? {
         }
     } else {
         return when (state) {
-            is DkgState.ShowingSeed, is DkgState.ImportingSeed -> 1
+            is DkgState.ChoosingSeedGeneration,
+            is DkgState.CollectingEntropy,
+            is DkgState.GeneratingSeed,
+            is DkgState.ShowingSeed,
+            is DkgState.ImportingSeed -> 1
             is DkgState.SeedConfirmed, is DkgState.GeneratingPaillier,
             is DkgState.SplittingKeys, is DkgState.ChoosingBiometric -> 2
             is DkgState.ChoosingTransport -> 3

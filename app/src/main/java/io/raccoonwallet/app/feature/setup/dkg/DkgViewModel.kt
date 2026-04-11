@@ -12,6 +12,7 @@ import io.raccoonwallet.app.core.crypto.Bip39
 import io.raccoonwallet.app.core.crypto.LindellDkg
 import io.raccoonwallet.app.core.crypto.PaillierCipher
 import io.raccoonwallet.app.core.crypto.Secp256k1
+import io.raccoonwallet.app.core.crypto.TapEntropyCollector
 import io.raccoonwallet.app.core.model.Account
 import io.raccoonwallet.app.core.model.AppMode
 import io.raccoonwallet.app.core.model.AuthMode
@@ -91,6 +92,7 @@ class DkgViewModel(
     private var mnemonic: List<String>? = null
     private var paillierKeyPair: PaillierCipher.KeyPair? = null
     private var splitResults: List<LindellDkg.SplitResult>? = null
+    private var tapEntropyCollector: TapEntropyCollector? = null
 
     // ══════════════════════════════════════
     // ── Signer Flow (generates seed) ──
@@ -99,24 +101,64 @@ class DkgViewModel(
     fun startSignerDkg() {
         preparedFreshStores = false
         secretStore = null
-        viewModelScope.launch {
-            try {
-                val words = withContext(Dispatchers.Default) { Bip39.generateMnemonic() }
-                mnemonic = words
-                _dkgState.value = DkgState.ShowingSeed(words)
-            } catch (e: Exception) {
-                _dkgState.value = DkgState.Failed(FlowError.CryptoFailed(
-                    e.message ?: "Failed to generate mnemonic"
-                ))
-            }
-        }
+        authMode = AuthMode.NONE
+        clearTransientCryptoState()
+        _dkgState.value = DkgState.ChoosingSeedGeneration
+    }
+
+    fun startStandardSeedGeneration() {
+        clearTapEntropy()
+        generateSignerMnemonic()
+    }
+
+    fun startEntropyCollection() {
+        mnemonic = null
+        clearTapEntropy()
+        tapEntropyCollector = TapEntropyCollector()
+        _dkgState.value = DkgState.CollectingEntropy()
+    }
+
+    fun recordEntropyTap(
+        xPx: Float,
+        yPx: Float,
+        widthPx: Float,
+        heightPx: Float,
+        eventTimeNanos: Long
+    ) {
+        val collector = tapEntropyCollector ?: return
+        collector.addTap(
+            xPx = xPx,
+            yPx = yPx,
+            widthPx = widthPx,
+            heightPx = heightPx,
+            eventTimeNanos = eventTimeNanos
+        )
+        _dkgState.value = DkgState.CollectingEntropy(
+            tapCount = collector.tapCount,
+            progress = collector.progress(),
+            isReady = collector.isReady()
+        )
+    }
+
+    fun finalizeEntropyCollection() {
+        val extraEntropy = tapEntropyCollector?.buildEntropy() ?: return
+        clearTapEntropy()
+        generateSignerMnemonic(extraEntropy)
+    }
+
+    fun cancelEntropyCollection() {
+        clearTapEntropy()
+        _dkgState.value = DkgState.ChoosingSeedGeneration
     }
 
     fun showImportSeed() {
+        mnemonic = null
+        clearTapEntropy()
         _dkgState.value = DkgState.ImportingSeed
     }
 
     fun startSignerImport(words: List<String>) {
+        clearTapEntropy()
         viewModelScope.launch {
             try {
                 require(Bip39.validateMnemonic(words)) { "Invalid mnemonic" }
@@ -134,6 +176,7 @@ class DkgViewModel(
         // Capture words and immediately clear the class field
         val words = mnemonic ?: return
         mnemonic = null
+        clearTapEntropy()
 
         viewModelScope.launch {
             try {
@@ -570,6 +613,31 @@ class DkgViewModel(
         mnemonic = null
         paillierKeyPair = null
         splitResults = null
+        clearTapEntropy()
+    }
+
+    private fun clearTapEntropy() {
+        tapEntropyCollector?.reset()
+        tapEntropyCollector = null
+    }
+
+    private fun generateSignerMnemonic(extraEntropy: ByteArray? = null) {
+        viewModelScope.launch {
+            try {
+                _dkgState.value = DkgState.GeneratingSeed
+                val words = withContext(Dispatchers.Default) {
+                    Bip39.generateMnemonic(extraEntropy)
+                }
+                mnemonic = words
+                _dkgState.value = DkgState.ShowingSeed(words)
+            } catch (e: Exception) {
+                _dkgState.value = DkgState.Failed(FlowError.CryptoFailed(
+                    e.message ?: "Failed to generate mnemonic"
+                ))
+            } finally {
+                extraEntropy?.fill(0)
+            }
+        }
     }
 
     /**

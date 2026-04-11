@@ -35,6 +35,8 @@ class MainActivity : FragmentActivity() {
             }
         }
 
+        app.appSettings.refreshDiagnostics()
+
         val startDestination: Any = if (integrityResult is IntegrityChecker.Result.Corrupted) {
             ModeSelect(showResetNotice = true)
         } else {

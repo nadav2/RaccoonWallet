@@ -2,6 +2,13 @@ package io.raccoonwallet.app.core.model
 
 sealed class DkgState {
     data object Idle : DkgState()
+    data object ChoosingSeedGeneration : DkgState()
+    data class CollectingEntropy(
+        val tapCount: Int = 0,
+        val progress: Float = 0f,
+        val isReady: Boolean = false
+    ) : DkgState()
+    data object GeneratingSeed : DkgState()
     data class ShowingSeed(val words: List<String>) : DkgState() {
         override fun toString() = "ShowingSeed(words=[REDACTED, ${words.size} words])"
     }
