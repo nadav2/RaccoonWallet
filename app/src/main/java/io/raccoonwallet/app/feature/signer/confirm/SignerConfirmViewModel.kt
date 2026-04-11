@@ -14,6 +14,7 @@ import io.raccoonwallet.app.core.crypto.Secp256k1
 import io.raccoonwallet.app.core.model.AuthMode
 import io.raccoonwallet.app.core.model.FlowError
 import io.raccoonwallet.app.core.model.TransportMode
+import io.raccoonwallet.app.core.transport.SessionCrypto
 import io.raccoonwallet.app.core.transport.TransportMessage
 import io.raccoonwallet.app.core.storage.BiometricSecretReader
 import io.raccoonwallet.app.core.storage.Serializers.toBigIntegerFromBase64
@@ -64,8 +65,10 @@ class SignerConfirmViewModel(
             try {
                 val pending = hceSessionManager.signRequestFlow.first { it.request.sessionId == sessionId }
                 signRequest = pending.request
-                // Collect the most recent session fingerprint (emitted during handshake)
-                val fingerprint = hceSessionManager.sessionFingerprintFlow.replayCache.lastOrNull()
+                val fingerprint = when (transportMode) {
+                    TransportMode.NFC -> hceSessionManager.sessionFingerprintFlow.replayCache.lastOrNull()
+                    TransportMode.QR -> SessionCrypto.fingerprintFromSessionId(sessionId)
+                }
                 _state.value = SignerConfirmState.ShowingRequest(pending.request, fingerprint)
             } catch (e: Exception) {
                 _state.value = SignerConfirmState.Failed(FlowError.ProtocolMismatch(

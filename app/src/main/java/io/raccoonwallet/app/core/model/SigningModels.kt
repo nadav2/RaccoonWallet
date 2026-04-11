@@ -43,7 +43,7 @@ sealed class SignState {
     data object BuildingTransaction : SignState()
     data object ChoosingTransport : SignState()
     data object AwaitingTap1 : SignState()
-    data class DisplayingQr(val frames: List<String>) : SignState()
+    data class DisplayingQr(val frames: List<String>, val fingerprint: String? = null) : SignState()
     data object RequestDelivered : SignState()
     data class WaitingForApproval(val fingerprint: String? = null) : SignState()
     data object AwaitingTap2 : SignState()

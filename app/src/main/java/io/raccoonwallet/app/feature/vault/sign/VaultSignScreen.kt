@@ -100,6 +100,19 @@ fun VaultSignScreen(
 
                 is SignState.DisplayingQr -> {
                     Text("Show this to Signer", style = MaterialTheme.typography.titleMedium)
+                    if (s.fingerprint != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "Connection: ${s.fingerprint}",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            "Verify this matches on Signer",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Spacer(modifier = Modifier.height(16.dp))
                     QrFrameDisplay(frames = s.frames)
                     Spacer(modifier = Modifier.height(16.dp))

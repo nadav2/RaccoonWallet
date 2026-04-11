@@ -58,12 +58,6 @@ sealed class FlowError {
         override val action = Action.RESTART_PAIRING
     }
 
-    data class SessionExpired(
-        override val userMessage: String = "Session expired. Please start a new request."
-    ) : FlowError() {
-        override val action = Action.RESTART_SETUP
-    }
-
     // ── Storage ──
 
     data class StorageFailed(val detail: String) : FlowError() {

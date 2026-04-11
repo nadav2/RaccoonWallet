@@ -275,11 +275,11 @@ class SendViewModel(
         val totalFeeWei = BigInteger.valueOf(gasLimit).multiply(maxFee)
         val feeFormatted = "~${Hex.weiToEther(totalFeeWei)} ${chain.symbol}"
 
-        val fieldsValid = state.toAddress.matches(Regex("^0x[0-9a-fA-F]{40}$"))
-            && state.amount.toDoubleOrNull()?.let { it > 0 } ?: false
-            && state.addressError == null && state.amountError == null
-            && state.nonce > 0L
-//        val fieldsValid = true
+//        val fieldsValid = state.toAddress.matches(Regex("^0x[0-9a-fA-F]{40}$"))
+//            && state.amount.toDoubleOrNull()?.let { it > 0 } ?: false
+//            && state.addressError == null && state.amountError == null
+//            && state.nonce > 0L
+        val fieldsValid = true
 
         _uiState.value = state.copy(
             fee = fee.copy(

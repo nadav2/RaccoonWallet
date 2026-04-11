@@ -25,6 +25,7 @@ import io.raccoonwallet.app.core.crypto.PaillierCipher
 import io.raccoonwallet.app.core.storage.BiometricSecretReader
 import io.raccoonwallet.app.core.storage.Serializers.toBigIntegerFromBase64
 import io.raccoonwallet.app.core.storage.Serializers.toECPointFromBase64
+import io.raccoonwallet.app.core.transport.SessionCrypto
 import io.raccoonwallet.app.core.transport.TransportMessage
 import io.raccoonwallet.app.core.transport.nfc.RaccoonWalletHceService
 import io.raccoonwallet.app.core.transport.qr.QrTransport
@@ -141,7 +142,8 @@ class VaultSignViewModel(
             TransportMode.NFC -> _signState.value = SignState.AwaitingTap1
             TransportMode.QR -> {
                 val frames = transportBridge.encodeForQr(request)
-                _signState.value = SignState.DisplayingQr(frames)
+                val fingerprint = SessionCrypto.fingerprintFromSessionId(request.sessionId)
+                _signState.value = SignState.DisplayingQr(frames, fingerprint)
             }
         }
     }

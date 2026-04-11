@@ -147,6 +147,14 @@ class SessionCrypto {
             params.init(ECGenParameterSpec("secp256r1"))
             params.getParameterSpec(java.security.spec.ECParameterSpec::class.java)
         }
+
+        /** Derive a 4-digit verification code from a session ID (for QR transport). */
+        fun fingerprintFromSessionId(sessionId: String): String {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val hash = digest.digest(sessionId.toByteArray())
+            val numeric = ((hash[0].toInt() and 0xFF) shl 8) or (hash[1].toInt() and 0xFF)
+            return (numeric % 10000).toString().padStart(4, '0')
+        }
     }
 
     private fun compareSalts(a: ByteArray, b: ByteArray): Int {
