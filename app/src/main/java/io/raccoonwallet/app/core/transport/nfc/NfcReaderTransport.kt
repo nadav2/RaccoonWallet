@@ -23,6 +23,7 @@ class NfcReaderTransport(
     }
 
     private var isoDep: IsoDep? = null
+    private var readerActivity: Activity? = null
     private val sessionCrypto = SessionCrypto()
 
     /**
@@ -52,6 +53,7 @@ class NfcReaderTransport(
             putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 500)
         }
 
+        readerActivity = activity
         adapter.enableReaderMode(
             activity,
             callback,
@@ -62,7 +64,7 @@ class NfcReaderTransport(
 
         cont.invokeOnCancellation {
             handled.set(true)
-            adapter.disableReaderMode(activity)
+            disableReaderMode()
         }
     }
 
@@ -198,6 +200,18 @@ class NfcReaderTransport(
         try { isoDep?.close() } catch (_: Exception) {}
         isoDep = null
         sessionCrypto.reset()
+        disableReaderMode()
+    }
+
+    private fun disableReaderMode() {
+        val activity = readerActivity ?: return
+        readerActivity = null
+        // Must run on main thread
+        activity.runOnUiThread {
+            try {
+                NfcAdapter.getDefaultAdapter(activity)?.disableReaderMode(activity)
+            } catch (_: Exception) {}
+        }
     }
 
     private fun connectAndHandshake(tag: android.nfc.Tag): Boolean {
