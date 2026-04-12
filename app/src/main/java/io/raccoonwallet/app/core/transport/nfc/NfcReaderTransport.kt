@@ -8,6 +8,7 @@ import io.raccoonwallet.app.core.transport.MessageCodec
 import io.raccoonwallet.app.core.transport.SessionCrypto
 import io.raccoonwallet.app.core.transport.TransportMessage
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 
 /**
@@ -34,10 +35,11 @@ class NfcReaderTransport(
             return@suspendCancellableCoroutine
         }
 
+        val handled = AtomicBoolean(false)
+
         val callback = NfcAdapter.ReaderCallback { tag ->
-            // Disable reader mode immediately so stray re-taps don't
-            // create new ECDH sessions that corrupt the Signer's state.
-            adapter.disableReaderMode(activity)
+            // Ignore duplicate callbacks from stray re-taps
+            if (!handled.compareAndSet(false, true)) return@ReaderCallback
             val success = try {
                 connectAndHandshake(tag)
             } catch (_: Exception) {
@@ -59,6 +61,7 @@ class NfcReaderTransport(
         )
 
         cont.invokeOnCancellation {
+            handled.set(true)
             adapter.disableReaderMode(activity)
         }
     }
