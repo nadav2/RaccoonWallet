@@ -16,6 +16,7 @@ import io.raccoonwallet.app.core.storage.SecretStore
 import io.raccoonwallet.app.core.storage.SecretStoreData
 import io.raccoonwallet.app.core.storage.KeystoreProvider
 import io.raccoonwallet.app.core.storage.MasterPasswordManager
+import io.raccoonwallet.app.core.storage.WipeProtection
 import io.raccoonwallet.app.core.transport.MessageCodec
 import io.raccoonwallet.app.core.transport.TransportBridge
 import io.raccoonwallet.app.core.transport.nfc.ApduChunker
@@ -35,6 +36,7 @@ class RaccoonWalletApp : Application() {
     lateinit var versionName: String
     lateinit var appSettings: AppSettingsService
     lateinit var masterPasswordManager: MasterPasswordManager
+    lateinit var wipeProtection: WipeProtection
 
     val publicStoreFile: File
         get() = File(filesDir, "public_store.enc")
@@ -70,6 +72,7 @@ class RaccoonWalletApp : Application() {
         } catch (_: Exception) { }
         publicStore.deleteAll()
         masterPasswordManager.deletePassword()
+        wipeProtection.deleteAll()
     }
 
     /**
@@ -94,6 +97,10 @@ class RaccoonWalletApp : Application() {
 
         versionName = packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
         masterPasswordManager = MasterPasswordManager(passwordVerifierFile)
+        wipeProtection = WipeProtection(
+            configFile = File(filesDir, "wipe_config.dat"),
+            duressVerifierFile = File(filesDir, "duress_verifier.enc")
+        )
 
         publicStore = PublicStore(
             EncryptedJsonStore(

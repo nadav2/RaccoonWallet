@@ -34,12 +34,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+sealed class UnlockResult {
+    data object Success : UnlockResult()
+    data class WrongPassword(val attemptsRemaining: Int?) : UnlockResult()
+    data object Wipe : UnlockResult()
+}
+
 @Composable
 fun PasswordLockScreen(
-    onUnlock: (CharArray) -> Boolean
+    onUnlock: (CharArray) -> UnlockResult,
+    onWipe: () -> Unit = {}
 ) {
     var password by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -47,15 +54,27 @@ fun PasswordLockScreen(
         if (password.isEmpty() || checking) return
         val chars = password.toCharArray()
         checking = true
-        error = false
+        errorMessage = null
         scope.launch {
-            val ok = withContext(Dispatchers.Default) { onUnlock(chars) }
+            val result = withContext(Dispatchers.Default) { onUnlock(chars) }
             chars.fill('\u0000')
-            if (!ok) {
-                error = true
-                password = ""
+            // Back on Main thread — safe to mutate Compose state
+            when (result) {
+                is UnlockResult.Success -> checking = false
+                is UnlockResult.WrongPassword -> {
+                    errorMessage = if (result.attemptsRemaining != null) {
+                        "Wrong password (${result.attemptsRemaining} attempts remaining)"
+                    } else {
+                        "Wrong password"
+                    }
+                    password = ""
+                    checking = false
+                }
+                is UnlockResult.Wipe -> {
+                    checking = false
+                    onWipe()
+                }
             }
-            checking = false
         }
     }
 
@@ -84,7 +103,7 @@ fun PasswordLockScreen(
                 value = password,
                 onValueChange = {
                     password = it
-                    error = false
+                    errorMessage = null
                 },
                 label = { Text("Master Password") },
                 visualTransformation = PasswordVisualTransformation(),
@@ -93,10 +112,14 @@ fun PasswordLockScreen(
                     imeAction = ImeAction.Done
                 ),
                 keyboardActions = KeyboardActions(onDone = { attemptUnlock() }),
-                isError = error,
+                isError = errorMessage != null,
                 supportingText = {
-                    AnimatedVisibility(visible = error, enter = fadeIn(), exit = fadeOut()) {
-                        Text("Wrong password")
+                    AnimatedVisibility(
+                        visible = errorMessage != null,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Text(errorMessage ?: "")
                     }
                 },
                 singleLine = true,

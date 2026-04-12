@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import io.raccoonwallet.app.deps
 import io.raccoonwallet.app.feature.settings.PasswordSettingsSection
+import io.raccoonwallet.app.feature.settings.SecuritySettingsSection
 import io.raccoonwallet.app.ui.components.DiagnosticsCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,6 +82,9 @@ fun VaultSettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
             PasswordSettingsSection(app = app)
+
+            Spacer(modifier = Modifier.height(16.dp))
+            SecuritySettingsSection(app = app)
 
             Spacer(modifier = Modifier.height(32.dp))
             Button(
