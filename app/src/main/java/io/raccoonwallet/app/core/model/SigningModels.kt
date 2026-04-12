@@ -17,7 +17,7 @@ sealed class DkgState {
     data object GeneratingPaillier : DkgState()
     data object SplittingKeys : DkgState()
     data object ChoosingBiometric : DkgState()
-    data class PreparingSecurity(val message: String = "Setting up security...") : DkgState()
+    data object PreparingSecurity : DkgState()
     data object ChoosingTransport : DkgState()
 
     // NFC flow

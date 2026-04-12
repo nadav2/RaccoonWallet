@@ -5,6 +5,7 @@ import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import io.raccoonwallet.app.core.storage.MasterPasswordManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -164,6 +165,9 @@ fun DkgScreen(
         }
 
         var selectedAuthMode by remember { mutableStateOf(AuthMode.NONE) }
+        var passwordEnabled by remember { mutableStateOf(false) }
+        var password by remember { mutableStateOf("") }
+        var confirmPassword by remember { mutableStateOf("") }
 
         LaunchedEffect(deviceHasBiometric) {
             if (!deviceHasBiometric) selectedAuthMode = AuthMode.NONE
@@ -329,9 +333,6 @@ fun DkgScreen(
 
                 // Master password
                 Spacer(modifier = Modifier.height(16.dp))
-                var passwordEnabled by remember { mutableStateOf(false) }
-                var password by remember { mutableStateOf("") }
-                var confirmPassword by remember { mutableStateOf("") }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -357,7 +358,7 @@ fun DkgScreen(
                 }
 
                 if (passwordEnabled) {
-                    val tooShort = password.isNotEmpty() && password.length < io.raccoonwallet.app.core.storage.MasterPasswordManager.MIN_PASSWORD_LENGTH
+                    val tooShort = password.isNotEmpty() && password.length < MasterPasswordManager.MIN_PASSWORD_LENGTH
                     val mismatch = confirmPassword.isNotEmpty() && password != confirmPassword
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -369,7 +370,7 @@ fun DkgScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         isError = tooShort,
                         supportingText = if (tooShort) {
-                            { Text("Minimum ${io.raccoonwallet.app.core.storage.MasterPasswordManager.MIN_PASSWORD_LENGTH} characters") }
+                            { Text("Minimum ${MasterPasswordManager.MIN_PASSWORD_LENGTH} characters") }
                         } else null,
                         singleLine = true,
                         enabled = !isBusy,
@@ -393,7 +394,7 @@ fun DkgScreen(
                 }
 
                 val passwordValid = !passwordEnabled ||
-                    (password.length >= io.raccoonwallet.app.core.storage.MasterPasswordManager.MIN_PASSWORD_LENGTH &&
+                    (password.length >= MasterPasswordManager.MIN_PASSWORD_LENGTH &&
                         password == confirmPassword)
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -413,8 +414,7 @@ fun DkgScreen(
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        val msg = (state as? DkgState.PreparingSecurity)?.message ?: "Generating keys..."
-                        Text(msg)
+                        Text(if (state is DkgState.PreparingSecurity) "Setting up security..." else "Generating keys...")
                     } else {
                         Text("Continue")
                     }

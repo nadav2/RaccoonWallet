@@ -215,7 +215,7 @@ class DkgViewModel(
 
     fun setSecurityOptions(mode: AuthMode, password: CharArray?) {
         authMode = mode
-        _dkgState.value = DkgState.PreparingSecurity()
+        _dkgState.value = DkgState.PreparingSecurity
         viewModelScope.launch {
             publicStore.setAuthMode(mode)
             if (password != null) {
