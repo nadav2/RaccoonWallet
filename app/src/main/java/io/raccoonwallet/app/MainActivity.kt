@@ -3,10 +3,18 @@ package io.raccoonwallet.app
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -33,7 +41,7 @@ class MainActivity : FragmentActivity() {
         val wipeProtection = app.wipeProtection
 
         val earlyStartDestination: Any? = if (!passwordManager.isPasswordConfigured()) {
-            runIntegrityAndResolveStart(app)
+            runIntegrityAndResolveStart(app) ?: return
         } else {
             null
         }
@@ -41,7 +49,6 @@ class MainActivity : FragmentActivity() {
         setContent {
             val isUnlocked by passwordManager.unlocked.collectAsState()
             val wiped = remember { mutableStateOf(false) }
-            // Re-check on every recomposition — file is deleted after reset
             val needsPassword = passwordManager.isPasswordConfigured()
 
             if (wiped.value) {
@@ -54,7 +61,6 @@ class MainActivity : FragmentActivity() {
             } else if (needsPassword && !isUnlocked) {
                 RaccoonWalletTheme {
                     PasswordLockScreen(onUnlock = { input ->
-                        // Copy input before unlock() wipes the original CharArray
                         val duressInput = input.copyOf()
 
                         if (passwordManager.unlock(input)) {
@@ -80,7 +86,7 @@ class MainActivity : FragmentActivity() {
                 }
             } else {
                 val startDestination = remember(isUnlocked) {
-                    earlyStartDestination ?: runIntegrityAndResolveStart(app)
+                    earlyStartDestination ?: (runIntegrityAndResolveStart(app) ?: ModeSelect())
                 }
 
                 val navController = rememberNavController()
@@ -106,8 +112,32 @@ class MainActivity : FragmentActivity() {
         app.reinitPublicStore()
     }
 
-    private fun runIntegrityAndResolveStart(app: RaccoonWalletApp): Any {
+    /**
+     * Run integrity check and resolve start destination.
+     * Returns null and shows a "device locked" screen if the Keystore is inaccessible.
+     */
+    private fun runIntegrityAndResolveStart(app: RaccoonWalletApp): Any? {
         val integrityResult = runBlocking { IntegrityChecker.check(app) }
+
+        if (integrityResult is IntegrityChecker.Result.DeviceLocked) {
+            setContent {
+                RaccoonWalletTheme {
+                    Scaffold { padding ->
+                        Box(
+                            modifier = Modifier.fillMaxSize().padding(padding),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Unlock your device to open Raccoon Wallet",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                }
+            }
+            return null
+        }
+
         if (integrityResult is IntegrityChecker.Result.Corrupted) {
             runBlocking { IntegrityChecker.fullReset(app) }
             app.reinitPublicStore()

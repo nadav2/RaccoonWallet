@@ -31,6 +31,8 @@ object IntegrityChecker {
     sealed class Result {
         data class OK(val snapshot: Snapshot) : Result()
         data class Corrupted(val reason: String) : Result()
+        /** Device is locked — Keystore keys are temporarily inaccessible. Retry after unlock. */
+        data object DeviceLocked : Result()
     }
 
     suspend fun check(app: RaccoonWalletApp): Result {
@@ -78,6 +80,9 @@ object IntegrityChecker {
                 withContext(Dispatchers.IO) {
                     KeystoreCipher.decrypt(SECRET_KEY_ALIAS, secretFile.readBytes())
                 }
+            } catch (_: android.security.keystore.UserNotAuthenticatedException) {
+                // Device is locked (setUnlockedDeviceRequired). Key is valid, just
+                // temporarily inaccessible — not corruption.
             } catch (_: Exception) {
                 return Result.Corrupted("Key share data is unreadable")
             }
@@ -116,6 +121,8 @@ object IntegrityChecker {
                 accounts = publicStore.getAccounts(),
                 authMode = publicStore.getAuthMode()
             )
+        } catch (_: android.security.keystore.UserNotAuthenticatedException) {
+            return Result.DeviceLocked
         } catch (_: Exception) {
             return Result.Corrupted("Wallet data is unreadable")
         }
