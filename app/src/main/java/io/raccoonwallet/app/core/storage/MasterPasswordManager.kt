@@ -28,6 +28,7 @@ class MasterPasswordManager(private val verifierFile: File) {
 
     private val keyLock = Any()
     private var cachedKey: ByteArray? = null
+    private var pendingSalt: ByteArray? = null
 
     fun isPasswordConfigured(): Boolean = verifierFile.exists()
 
@@ -35,16 +36,56 @@ class MasterPasswordManager(private val verifierFile: File) {
         cachedKey?.copyOf()
     }
 
+    /**
+     * Full setup: derive key, write verifier, cache key. Use from settings
+     * when DKG is already complete.
+     */
     fun setupPassword(password: CharArray) {
+        preparePassword(password)
+        commitPassword()
+    }
+
+    /**
+     * Phase 1 (DKG): derive and cache the key so stores can encrypt with it,
+     * but do NOT write the verifier file yet. Call [commitPassword] after
+     * DKG completes successfully.
+     */
+    fun preparePassword(password: CharArray) {
         try {
             val salt = PasswordCipher.generateSalt()
             val key = PasswordCipher.deriveKey(password, salt)
-            val verifierBytes = PasswordCipher.encrypt(key, salt, VERIFIER_PLAINTEXT)
-            verifierFile.writeBytes(verifierBytes)
-            synchronized(keyLock) { cachedKey = key }
+            synchronized(keyLock) {
+                pendingSalt = salt
+                cachedKey = key
+            }
             _unlocked.value = true
         } finally {
             password.fill('\u0000')
+        }
+    }
+
+    /**
+     * Phase 2 (DKG): write the verifier file, making the password permanent.
+     * Only call after stores have been written successfully.
+     */
+    fun commitPassword() = synchronized(keyLock) {
+        val key = cachedKey ?: return@synchronized
+        val salt = pendingSalt ?: PasswordCipher.generateSalt()
+        val verifierBytes = PasswordCipher.encrypt(key, salt, VERIFIER_PLAINTEXT)
+        verifierFile.writeBytes(verifierBytes)
+        pendingSalt = null
+    }
+
+    /**
+     * Discard a prepared-but-uncommitted password. Called on DKG cancel.
+     */
+    fun discardPreparedPassword() = synchronized(keyLock) {
+        if (!verifierFile.exists()) {
+            // Only wipe if never committed
+            cachedKey?.let { ConstantTime.wipe(it) }
+            cachedKey = null
+            pendingSalt = null
+            _unlocked.value = false
         }
     }
 
@@ -77,9 +118,28 @@ class MasterPasswordManager(private val verifierFile: File) {
     }
 
     /**
-     * Change the master password. Uses the already-cached key to verify the old password
-     * (avoids a redundant Argon2id derivation). Derives the new key, swaps the cached key,
-     * then writes the new verifier.
+     * Verify that [password] matches the current master password.
+     * Runs Argon2id derivation — call from a background thread.
+     */
+    fun verifyPassword(password: CharArray): Boolean {
+        if (!verifierFile.exists()) { password.fill('\u0000'); return false }
+        val data = verifierFile.readBytes()
+        val salt = PasswordCipher.extractSalt(data)
+        val key = PasswordCipher.deriveKey(password, salt)
+        password.fill('\u0000')
+        return try {
+            val decrypted = PasswordCipher.decrypt(key, data)
+            ConstantTime.equals(decrypted, VERIFIER_PLAINTEXT)
+        } catch (_: AEADBadTagException) {
+            false
+        } finally {
+            ConstantTime.wipe(key)
+        }
+    }
+
+    /**
+     * Change the master password. Uses the already-cached key internally.
+     * Caller must verify the old password first via [verifyPassword].
      */
     fun changePassword(newPassword: CharArray): Boolean = synchronized(keyLock) {
         val existing = cachedKey ?: return false

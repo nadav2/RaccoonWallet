@@ -222,8 +222,7 @@ class DkgViewModel(
     }
 
     fun setMasterPassword(password: CharArray) {
-        app.masterPasswordManager.setupPassword(password)
-        password.fill('\u0000')
+        app.masterPasswordManager.preparePassword(password)
         proceedAfterPassword()
     }
 
@@ -406,6 +405,7 @@ class DkgViewModel(
                 )
             }
             publicStore.completeDkg(accounts, AppMode.SIGNER)
+            app.masterPasswordManager.commitPassword()
 
             clearTransientCryptoState()
             _dkgState.value = DkgState.Complete
@@ -573,6 +573,7 @@ class DkgViewModel(
             }
 
             publicStore.completeDkg(accounts, AppMode.VAULT)
+            app.masterPasswordManager.commitPassword()
             pendingVaultBundle = null
 
             if (transportMode == TransportMode.NFC) {
@@ -611,7 +612,7 @@ class DkgViewModel(
             try { secretStore?.deleteAll() } catch (_: Exception) {}
             secretStore = null
             publicStore.deleteAll()
-            app.masterPasswordManager.deletePassword()
+            app.masterPasswordManager.discardPreparedPassword()
             try {
                 KeystoreCipher.deleteKey("raccoonwallet_secret_master")
             } catch (_: Exception) {
@@ -625,6 +626,7 @@ class DkgViewModel(
         clearTransientCryptoState()
         pendingVaultBundle = null
         hceSessionManager.clearDkgState()
+        app.masterPasswordManager.discardPreparedPassword()
         super.onCleared()
     }
 

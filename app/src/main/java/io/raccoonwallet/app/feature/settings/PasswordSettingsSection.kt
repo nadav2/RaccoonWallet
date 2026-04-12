@@ -142,19 +142,31 @@ private fun SetPasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
 
 @Composable
 private fun ChangePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
+    var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     val confirm = remember { mutableStateOf("") }
     val error = remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     val mismatch = confirm.value.isNotEmpty() && newPassword != confirm.value
-    val valid = newPassword.length >= MasterPasswordManager.MIN_PASSWORD_LENGTH && newPassword == confirm.value
+    val valid = currentPassword.isNotEmpty() &&
+        newPassword.length >= MasterPasswordManager.MIN_PASSWORD_LENGTH &&
+        newPassword == confirm.value
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Change Master Password") },
         text = {
             Column {
+                TextField(
+                    value = currentPassword,
+                    onValueChange = { currentPassword = it; error.value = "" },
+                    label = { Text("Current Password") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
                 TextField(
                     value = newPassword,
                     onValueChange = { newPassword = it; error.value = "" },
@@ -189,10 +201,18 @@ private fun ChangePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
             TextButton(
                 onClick = {
                     scope.launch {
+                        val oldChars = currentPassword.toCharArray()
+                        val verified = withContext(Dispatchers.Default) {
+                            app.masterPasswordManager.verifyPassword(oldChars)
+                        }
+                        if (!verified) {
+                            error.value = "Current password is incorrect"
+                            currentPassword = ""
+                            return@launch
+                        }
+
                         val newChars = newPassword.toCharArray()
                         // Warm caches with old key BEFORE swapping keys.
-                        // getSecretStore creates a fresh instance (empty cache), so
-                        // we must read into cache while the old key is still active.
                         val authMode = app.publicStore.getAuthMode()
                         val secretStore = if (authMode == AuthMode.NONE) {
                             app.getSecretStore(authMode).also { it.readData() }
@@ -202,10 +222,10 @@ private fun ChangePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
                             app.masterPasswordManager.changePassword(newChars)
                         }
                         if (success) {
-                            // Re-encrypt stores with the new key (reads from warm cache)
                             app.publicStore.rewrite()
                             secretStore?.rewrite()
                             newChars.fill('\u0000')
+                            currentPassword = ""
                             newPassword = ""
                             confirm.value = ""
                             onDismiss()
