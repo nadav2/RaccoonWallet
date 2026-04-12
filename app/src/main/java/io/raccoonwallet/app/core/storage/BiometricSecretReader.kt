@@ -2,6 +2,7 @@ package io.raccoonwallet.app.core.storage
 
 import androidx.fragment.app.FragmentActivity
 import io.raccoonwallet.app.core.model.AuthMode
+import io.raccoonwallet.app.deps
 
 /**
  * Shared helper for authenticating and reading from the biometric-gated secret store.
@@ -11,6 +12,23 @@ import io.raccoonwallet.app.core.model.AuthMode
 object BiometricSecretReader {
 
     suspend fun authenticateAndRead(
+        authMode: AuthMode,
+        activity: FragmentActivity?,
+        secretStore: SecretStore,
+        aead: KeystoreAead?
+    ): SecretStoreData? {
+        // Hold the password key alive during biometric/NFC operations so
+        // ProcessLifecycleOwner ON_STOP doesn't wipe it mid-signing.
+        val passwordManager = activity?.application?.deps?.masterPasswordManager
+        passwordManager?.acquireHold()
+        try {
+            return doAuthenticateAndRead(authMode, activity, secretStore, aead)
+        } finally {
+            passwordManager?.releaseHold()
+        }
+    }
+
+    private suspend fun doAuthenticateAndRead(
         authMode: AuthMode,
         activity: FragmentActivity?,
         secretStore: SecretStore,

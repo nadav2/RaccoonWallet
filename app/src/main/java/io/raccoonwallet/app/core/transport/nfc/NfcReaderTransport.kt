@@ -35,6 +35,9 @@ class NfcReaderTransport(
         }
 
         val callback = NfcAdapter.ReaderCallback { tag ->
+            // Disable reader mode immediately so stray re-taps don't
+            // create new ECDH sessions that corrupt the Signer's state.
+            adapter.disableReaderMode(activity)
             val success = try {
                 connectAndHandshake(tag)
             } catch (_: Exception) {

@@ -128,9 +128,6 @@ class RaccoonWalletApp : Application() {
             resetAction = ::resetAction
         )
 
-        // Lock password when the app truly goes to background (process-level).
-        // Activity-level onStop fires during biometric prompts and system overlays,
-        // but ProcessLifecycleOwner only fires when the whole app is backgrounded.
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_STOP) masterPasswordManager.lock()

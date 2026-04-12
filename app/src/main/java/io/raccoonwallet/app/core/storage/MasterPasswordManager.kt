@@ -29,6 +29,8 @@ class MasterPasswordManager(private val verifierFile: File) {
     private val keyLock = Any()
     private var cachedKey: ByteArray? = null
     private var pendingSalt: ByteArray? = null
+    private var holdCount = 0
+    private var lockPending = false
 
     fun isPasswordConfigured(): Boolean = verifierFile.exists()
 
@@ -111,10 +113,30 @@ class MasterPasswordManager(private val verifierFile: File) {
         }
     }
 
-    fun lock() = synchronized(keyLock) {
+    fun lock(): Unit = synchronized(keyLock) {
+        if (holdCount > 0) {
+            lockPending = true
+            return
+        }
         cachedKey?.let { ConstantTime.wipe(it) }
         cachedKey = null
+        lockPending = false
         _unlocked.value = false
+    }
+
+    /**
+     * Prevent [lock] from wiping the key while a critical operation
+     * (signing, biometric prompt) is in progress. Must be paired with [releaseHold].
+     */
+    fun acquireHold(): Unit = synchronized(keyLock) {
+        holdCount++
+    }
+
+    fun releaseHold(): Unit = synchronized(keyLock) {
+        holdCount = (holdCount - 1).coerceAtLeast(0)
+        if (holdCount == 0 && lockPending) {
+            lock()
+        }
     }
 
     /**
