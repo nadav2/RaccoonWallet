@@ -1,5 +1,6 @@
 package io.raccoonwallet.app.feature.settings
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,8 +10,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -28,25 +31,90 @@ import androidx.compose.ui.unit.dp
 import io.raccoonwallet.app.RaccoonWalletApp
 import io.raccoonwallet.app.core.model.AuthMode
 import io.raccoonwallet.app.core.storage.MasterPasswordManager
+import io.raccoonwallet.app.core.storage.SecretStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+// ── Shared helpers ──
+
+@Composable
+private fun DialogStatus(working: Boolean, statusText: String, error: String) {
+    if (working) {
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(statusText, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+    if (error.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun PasswordField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    enabled: Boolean,
+    isError: Boolean = false,
+    supportingText: String? = null
+) {
+    TextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        visualTransformation = PasswordVisualTransformation(),
+        isError = isError,
+        supportingText = if (supportingText != null) {
+            { Text(supportingText) }
+        } else null,
+        singleLine = true,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+private suspend fun warmStores(app: RaccoonWalletApp): SecretStore? {
+    val authMode = app.publicStore.getAuthMode()
+    return if (authMode == AuthMode.NONE) {
+        app.getSecretStore(authMode).also { it.readData() }
+    } else null
+}
+
+private suspend fun rewriteStores(app: RaccoonWalletApp, secretStore: SecretStore?) {
+    app.publicStore.rewrite()
+    secretStore?.rewrite()
+}
+
+// ── Main section ──
+
 @Composable
 fun PasswordSettingsSection(app: RaccoonWalletApp) {
     val passwordManager = app.masterPasswordManager
-    // Observe unlocked state so this recomposes when password is set/deleted
     val isUnlocked by passwordManager.unlocked.collectAsState()
     val isConfigured = isUnlocked || passwordManager.isPasswordConfigured()
     val showSetDialog = remember { mutableStateOf(false) }
     val showChangeDialog = remember { mutableStateOf(false) }
+    val showDeleteDialog = remember { mutableStateOf(false) }
 
     if (isConfigured) {
-        Button(
-            onClick = { showChangeDialog.value = true },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Change Master Password")
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { showChangeDialog.value = true },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Change Password")
+            }
+            OutlinedButton(
+                onClick = { showDeleteDialog.value = true },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Remove Password")
+            }
         }
     } else {
         Button(
@@ -60,17 +128,21 @@ fun PasswordSettingsSection(app: RaccoonWalletApp) {
     if (showSetDialog.value) {
         SetPasswordDialog(app = app, onDismiss = { showSetDialog.value = false })
     }
-
+    if (showDeleteDialog.value) {
+        DeletePasswordDialog(app = app, onDismiss = { showDeleteDialog.value = false })
+    }
     if (showChangeDialog.value) {
         ChangePasswordDialog(app = app, onDismiss = { showChangeDialog.value = false })
     }
 }
 
+// ── Dialogs ──
+
 @Composable
 private fun SetPasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
     var password by remember { mutableStateOf("") }
     val confirm = remember { mutableStateOf("") }
-    var error by remember { mutableStateOf("") }
+    val error = remember { mutableStateOf("") }
     val working = remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -89,41 +161,14 @@ private fun SetPasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                TextField(
-                    value = password,
-                    onValueChange = { password = it; error = "" },
-                    label = { Text("Password") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    enabled = !working.value,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                PasswordField(password, { password = it; error.value = "" }, "Password", !working.value)
                 Spacer(modifier = Modifier.height(8.dp))
-                TextField(
-                    value = confirm.value,
-                    onValueChange = { confirm.value = it; error = "" },
-                    label = { Text("Confirm Password") },
-                    visualTransformation = PasswordVisualTransformation(),
+                PasswordField(
+                    confirm.value, { confirm.value = it; error.value = "" }, "Confirm Password", !working.value,
                     isError = mismatch,
-                    supportingText = if (mismatch) {
-                        { Text("Passwords do not match") }
-                    } else null,
-                    singleLine = true,
-                    enabled = !working.value,
-                    modifier = Modifier.fillMaxWidth()
+                    supportingText = if (mismatch) "Passwords do not match" else null
                 )
-                if (working.value) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Setting up encryption...", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                if (error.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                }
+                DialogStatus(working.value, "Setting up encryption...", error.value)
             }
         },
         dismissButton = {
@@ -135,19 +180,13 @@ private fun SetPasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
                     scope.launch {
                         working.value = true
                         val chars = password.toCharArray()
-                        val authMode = app.publicStore.getAuthMode()
-                        val secretStore = if (authMode == AuthMode.NONE) {
-                            app.getSecretStore(authMode).also { it.readData() }
-                        } else null
-
+                        val secretStore = warmStores(app)
                         withContext(Dispatchers.Default) {
                             app.masterPasswordManager.setupPassword(chars)
                         }
-                        app.publicStore.rewrite()
-                        secretStore?.rewrite()
+                        rewriteStores(app, secretStore)
                         chars.fill('\u0000')
-                        password = ""
-                        confirm.value = ""
+                        password = ""; confirm.value = ""
                         working.value = false
                         onDismiss()
                     }
@@ -177,51 +216,16 @@ private fun ChangePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
         title = { Text("Change Master Password") },
         text = {
             Column {
-                TextField(
-                    value = currentPassword,
-                    onValueChange = { currentPassword = it; error.value = "" },
-                    label = { Text("Current Password") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    enabled = !working.value,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                PasswordField(currentPassword, { currentPassword = it; error.value = "" }, "Current Password", !working.value)
                 Spacer(modifier = Modifier.height(8.dp))
-                TextField(
-                    value = newPassword,
-                    onValueChange = { newPassword = it; error.value = "" },
-                    label = { Text("New Password") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    enabled = !working.value,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                PasswordField(newPassword, { newPassword = it; error.value = "" }, "New Password", !working.value)
                 Spacer(modifier = Modifier.height(8.dp))
-                TextField(
-                    value = confirm.value,
-                    onValueChange = { confirm.value = it; error.value = "" },
-                    label = { Text("Confirm New Password") },
-                    visualTransformation = PasswordVisualTransformation(),
+                PasswordField(
+                    confirm.value, { confirm.value = it; error.value = "" }, "Confirm New Password", !working.value,
                     isError = mismatch,
-                    supportingText = if (mismatch) {
-                        { Text("Passwords do not match") }
-                    } else null,
-                    singleLine = true,
-                    enabled = !working.value,
-                    modifier = Modifier.fillMaxWidth()
+                    supportingText = if (mismatch) "Passwords do not match" else null
                 )
-                if (working.value) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Changing password...", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                if (error.value.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(error.value, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                }
+                DialogStatus(working.value, "Changing password...", error.value)
             }
         },
         dismissButton = {
@@ -244,22 +248,14 @@ private fun ChangePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
                         }
 
                         val newChars = newPassword.toCharArray()
-                        // Warm caches with old key BEFORE swapping keys.
-                        val authMode = app.publicStore.getAuthMode()
-                        val secretStore = if (authMode == AuthMode.NONE) {
-                            app.getSecretStore(authMode).also { it.readData() }
-                        } else null
-
+                        val secretStore = warmStores(app)
                         val success = withContext(Dispatchers.Default) {
                             app.masterPasswordManager.changePassword(newChars)
                         }
                         if (success) {
-                            app.publicStore.rewrite()
-                            secretStore?.rewrite()
+                            rewriteStores(app, secretStore)
                             newChars.fill('\u0000')
-                            currentPassword = ""
-                            newPassword = ""
-                            confirm.value = ""
+                            currentPassword = ""; newPassword = ""; confirm.value = ""
                             working.value = false
                             onDismiss()
                         } else {
@@ -271,6 +267,65 @@ private fun ChangePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
                 },
                 enabled = valid
             ) { Text("Change Password") }
+        }
+    )
+}
+
+@Composable
+private fun DeletePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
+    var currentPassword by remember { mutableStateOf("") }
+    val error = remember { mutableStateOf("") }
+    val working = remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = { if (!working.value) onDismiss() },
+        title = { Text("Remove Master Password") },
+        text = {
+            Column {
+                Text(
+                    "Enter your current password to confirm. The app will no longer require a password on open.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                PasswordField(currentPassword, { currentPassword = it; error.value = "" }, "Current Password", !working.value)
+                DialogStatus(working.value, "Removing password...", error.value)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !working.value) { Text("Cancel") }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    scope.launch {
+                        working.value = true
+                        val chars = currentPassword.toCharArray()
+                        val verified = withContext(Dispatchers.Default) {
+                            app.masterPasswordManager.verifyPassword(chars)
+                        }
+                        if (!verified) {
+                            error.value = "Current password is incorrect"
+                            currentPassword = ""
+                            working.value = false
+                            return@launch
+                        }
+
+                        val secretStore = warmStores(app)
+                        app.masterPasswordManager.clearKey()
+                        rewriteStores(app, secretStore)
+                        app.masterPasswordManager.deletePassword()
+
+                        currentPassword = ""
+                        working.value = false
+                        onDismiss()
+                    }
+                },
+                enabled = currentPassword.isNotEmpty() && !working.value,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) { Text("Remove") }
         }
     )
 }

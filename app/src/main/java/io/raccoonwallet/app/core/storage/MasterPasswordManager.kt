@@ -113,13 +113,18 @@ class MasterPasswordManager(private val verifierFile: File) {
         }
     }
 
+    /** Must be called while holding [keyLock]. */
+    private fun wipeKeyLocked() {
+        cachedKey?.let { ConstantTime.wipe(it) }
+        cachedKey = null
+    }
+
     fun lock(): Unit = synchronized(keyLock) {
         if (holdCount > 0) {
             lockPending = true
             return
         }
-        cachedKey?.let { ConstantTime.wipe(it) }
-        cachedKey = null
+        wipeKeyLocked()
         lockPending = false
         _unlocked.value = false
     }
@@ -135,7 +140,9 @@ class MasterPasswordManager(private val verifierFile: File) {
     fun releaseHold(): Unit = synchronized(keyLock) {
         holdCount = (holdCount - 1).coerceAtLeast(0)
         if (holdCount == 0 && lockPending) {
-            lock()
+            wipeKeyLocked()
+            lockPending = false
+            _unlocked.value = false
         }
     }
 
@@ -187,8 +194,25 @@ class MasterPasswordManager(private val verifierFile: File) {
         true
     }
 
+    /**
+     * Clear the derived key without emitting state changes.
+     * Use before rewriting stores to strip the password layer,
+     * then call [deletePassword] to remove the verifier and emit.
+     */
+    fun clearKey(): Unit = synchronized(keyLock) {
+        if (holdCount > 0) {
+            lockPending = true
+            return
+        }
+        wipeKeyLocked()
+    }
+
     fun deletePassword() {
         if (verifierFile.exists()) verifierFile.delete()
-        lock()
+        synchronized(keyLock) {
+            wipeKeyLocked()
+            lockPending = false
+        }
+        _unlocked.value = false
     }
 }
