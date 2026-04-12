@@ -272,8 +272,9 @@ fun DkgScreen(
             is DkgState.SeedConfirmed,
             is DkgState.GeneratingPaillier,
             is DkgState.SplittingKeys,
+            is DkgState.PreparingSecurity,
             is DkgState.ChoosingBiometric -> {
-                val isGenerating = state !is DkgState.ChoosingBiometric
+                val isBusy = state !is DkgState.ChoosingBiometric
                 val bioEnabled = selectedAuthMode != AuthMode.NONE
 
                 Text("Security", style = MaterialTheme.typography.headlineSmall)
@@ -300,7 +301,7 @@ fun DkgScreen(
                         onCheckedChange = {
                             selectedAuthMode = if (it) AuthMode.BIOMETRIC_OR_DEVICE else AuthMode.NONE
                         },
-                        enabled = !isGenerating && deviceHasBiometric
+                        enabled = !isBusy && deviceHasBiometric
                     )
                 }
 
@@ -312,7 +313,7 @@ fun DkgScreen(
                     AuthModeOption(
                         selected = selectedAuthMode == AuthMode.BIOMETRIC_OR_DEVICE,
                         onClick = { selectedAuthMode = AuthMode.BIOMETRIC_OR_DEVICE },
-                        enabled = !isGenerating,
+                        enabled = !isBusy,
                         title = AuthMode.BIOMETRIC_OR_DEVICE.displayName,
                         description = "Fingerprint, face, or device PIN"
                     )
@@ -320,7 +321,7 @@ fun DkgScreen(
                     AuthModeOption(
                         selected = selectedAuthMode == AuthMode.BIOMETRIC_ONLY,
                         onClick = { selectedAuthMode = AuthMode.BIOMETRIC_ONLY },
-                        enabled = !isGenerating,
+                        enabled = !isBusy,
                         title = AuthMode.BIOMETRIC_ONLY.displayName,
                         description = "Stronger security. Adding or removing fingerprints will require a full wallet reset."
                     )
@@ -351,7 +352,7 @@ fun DkgScreen(
                             passwordEnabled = it
                             if (!it) { password = ""; confirmPassword = "" }
                         },
-                        enabled = !isGenerating
+                        enabled = !isBusy
                     )
                 }
 
@@ -371,7 +372,7 @@ fun DkgScreen(
                             { Text("Minimum ${io.raccoonwallet.app.core.storage.MasterPasswordManager.MIN_PASSWORD_LENGTH} characters") }
                         } else null,
                         singleLine = true,
-                        enabled = !isGenerating,
+                        enabled = !isBusy,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -386,7 +387,7 @@ fun DkgScreen(
                             { Text("Passwords do not match") }
                         } else null,
                         singleLine = true,
-                        enabled = !isGenerating,
+                        enabled = !isBusy,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -403,26 +404,21 @@ fun DkgScreen(
                         viewModel.setSecurityOptions(selectedAuthMode, pw)
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !isGenerating && passwordValid
+                    enabled = !isBusy && passwordValid
                 ) {
-                    if (isGenerating) {
+                    if (isBusy) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(18.dp),
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Generating keys...")
+                        val msg = (state as? DkgState.PreparingSecurity)?.message ?: "Generating keys..."
+                        Text(msg)
                     } else {
                         Text("Continue")
                     }
                 }
-            }
-
-            is DkgState.PreparingSecurity -> {
-                CircularProgressIndicator()
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Setting up security...", style = MaterialTheme.typography.bodyMedium)
             }
 
             is DkgState.ChoosingTransport -> {
