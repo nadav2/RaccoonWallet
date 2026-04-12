@@ -1,5 +1,6 @@
 package io.raccoonwallet.app.feature.vault.settings
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -33,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import io.raccoonwallet.app.deps
 import io.raccoonwallet.app.feature.settings.PasswordSettingsSection
 import io.raccoonwallet.app.feature.settings.SecuritySettingsSection
@@ -45,6 +47,7 @@ fun VaultSettingsScreen(
     onBack: () -> Unit
 ) {
     val app = (LocalContext.current.applicationContext as android.app.Application).deps
+    val activity = LocalActivity.current as FragmentActivity
     val appSettings = app.appSettings
     val diagnostics by appSettings.diagnostics.collectAsState()
 
@@ -84,7 +87,7 @@ fun VaultSettingsScreen(
             diagnostics?.let { DiagnosticsCard(data = it) }
 
             Spacer(modifier = Modifier.height(16.dp))
-            PasswordSettingsSection(app = app)
+            PasswordSettingsSection(app = app, activity = activity)
 
             Spacer(modifier = Modifier.height(16.dp))
             SecuritySettingsSection(app = app)

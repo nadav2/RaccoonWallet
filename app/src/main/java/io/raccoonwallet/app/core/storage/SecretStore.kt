@@ -14,5 +14,7 @@ class SecretStore(private val store: EncryptedJsonStore<SecretStoreData>) {
 
     suspend fun rewrite() { store.update { it } }
 
+    suspend fun rewriteWithCipher(cipher: Cipher) { store.updateWithCipher(cipher) { it } }
+
     suspend fun deleteAll() { store.delete() }
 }

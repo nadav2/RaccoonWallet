@@ -58,6 +58,48 @@ object BiometricSecretReader {
         }
     }
 
+    /**
+     * Authenticate via biometric and rewrite the secret store (read from cache, write back).
+     * Used when changing/setting/removing the master password with biometric auth modes.
+     * Returns true on success, false if biometric was denied.
+     */
+    suspend fun authenticateAndRewrite(
+        authMode: AuthMode,
+        activity: FragmentActivity?,
+        secretStore: SecretStore,
+        aead: KeystoreAead?
+    ): Boolean {
+        return when (authMode) {
+            AuthMode.NONE -> {
+                secretStore.rewrite()
+                true
+            }
+            AuthMode.BIOMETRIC_ONLY -> {
+                val act = requireActivity(activity)
+                val resolvedAead = aead ?: throw RuntimeException("KeystoreAead required for BIOMETRIC_ONLY")
+                val cipher = resolvedAead.createEncryptCipher()
+                when (val result = BiometricGate.authenticate(act, authMode, cipher)) {
+                    is AuthResult.Success -> {
+                        val authedCipher = result.cipher ?: throw RuntimeException("No cipher from biometric")
+                        secretStore.rewriteWithCipher(authedCipher)
+                        true
+                    }
+                    is AuthResult.Denied -> false
+                }
+            }
+            AuthMode.BIOMETRIC_OR_DEVICE -> {
+                val act = requireActivity(activity)
+                when (BiometricGate.authenticate(act, authMode)) {
+                    is AuthResult.Success -> {
+                        secretStore.rewrite()
+                        true
+                    }
+                    is AuthResult.Denied -> false
+                }
+            }
+        }
+    }
+
     private fun requireActivity(activity: FragmentActivity?): FragmentActivity =
         activity ?: throw RuntimeException("Activity not available for biometric prompt")
 }

@@ -28,8 +28,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import io.raccoonwallet.app.RaccoonWalletApp
 import io.raccoonwallet.app.core.model.AuthMode
+import io.raccoonwallet.app.core.storage.BiometricSecretReader
+import io.raccoonwallet.app.core.storage.KeystoreAead
 import io.raccoonwallet.app.core.storage.MasterPasswordManager
 import io.raccoonwallet.app.core.storage.SecretStore
 import kotlinx.coroutines.Dispatchers
@@ -78,22 +81,29 @@ private fun PasswordField(
     )
 }
 
-private suspend fun warmStores(app: RaccoonWalletApp): SecretStore? {
+private data class StoreContext(
+    val secretStore: SecretStore,
+    val authMode: AuthMode,
+    val aead: KeystoreAead?
+)
+
+private suspend fun warmStores(app: RaccoonWalletApp, activity: FragmentActivity?): StoreContext {
     val authMode = app.publicStore.getAuthMode()
-    return if (authMode == AuthMode.NONE) {
-        app.getSecretStore(authMode).also { it.readData() }
-    } else null
+    val secretStore = app.getSecretStore(authMode)
+    val aead = if (authMode == AuthMode.BIOMETRIC_ONLY) app.getSecretAead(authMode) else null
+    BiometricSecretReader.authenticateAndRead(authMode, activity, secretStore, aead)
+    return StoreContext(secretStore, authMode, aead)
 }
 
-private suspend fun rewriteStores(app: RaccoonWalletApp, secretStore: SecretStore?) {
+private suspend fun rewriteStores(app: RaccoonWalletApp, ctx: StoreContext, activity: FragmentActivity?): Boolean {
     app.publicStore.rewrite()
-    secretStore?.rewrite()
+    return BiometricSecretReader.authenticateAndRewrite(ctx.authMode, activity, ctx.secretStore, ctx.aead)
 }
 
 // ── Main section ──
 
 @Composable
-fun PasswordSettingsSection(app: RaccoonWalletApp) {
+fun PasswordSettingsSection(app: RaccoonWalletApp, activity: FragmentActivity) {
     val passwordManager = app.masterPasswordManager
     val isUnlocked by passwordManager.unlocked.collectAsState()
     val isConfigured = isUnlocked || passwordManager.isPasswordConfigured()
@@ -126,20 +136,20 @@ fun PasswordSettingsSection(app: RaccoonWalletApp) {
     }
 
     if (showSetDialog.value) {
-        SetPasswordDialog(app = app, onDismiss = { showSetDialog.value = false })
+        SetPasswordDialog(app = app, activity = activity, onDismiss = { showSetDialog.value = false })
     }
     if (showDeleteDialog.value) {
-        DeletePasswordDialog(app = app, onDismiss = { showDeleteDialog.value = false })
+        DeletePasswordDialog(app = app, activity = activity, onDismiss = { showDeleteDialog.value = false })
     }
     if (showChangeDialog.value) {
-        ChangePasswordDialog(app = app, onDismiss = { showChangeDialog.value = false })
+        ChangePasswordDialog(app = app, activity = activity, onDismiss = { showChangeDialog.value = false })
     }
 }
 
 // ── Dialogs ──
 
 @Composable
-private fun SetPasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
+private fun SetPasswordDialog(app: RaccoonWalletApp, activity: FragmentActivity, onDismiss: () -> Unit) {
     var password by remember { mutableStateOf("") }
     val confirm = remember { mutableStateOf("") }
     val error = remember { mutableStateOf("") }
@@ -180,11 +190,18 @@ private fun SetPasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
                     scope.launch {
                         working.value = true
                         val chars = password.toCharArray()
-                        val secretStore = warmStores(app)
+                        val stores = warmStores(app, activity)
                         withContext(Dispatchers.Default) {
                             app.masterPasswordManager.setupPassword(chars)
                         }
-                        rewriteStores(app, secretStore)
+                        if (!rewriteStores(app, stores, activity)) {
+                            // Biometric denied — undo: delete password so stores stay consistent
+                            app.masterPasswordManager.deletePassword()
+                            chars.fill('\u0000')
+                            error.value = "Biometric authentication required"
+                            working.value = false
+                            return@launch
+                        }
                         chars.fill('\u0000')
                         password = ""; confirm.value = ""
                         working.value = false
@@ -198,7 +215,7 @@ private fun SetPasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun ChangePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
+private fun ChangePasswordDialog(app: RaccoonWalletApp, activity: FragmentActivity, onDismiss: () -> Unit) {
     var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     val confirm = remember { mutableStateOf("") }
@@ -248,12 +265,17 @@ private fun ChangePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
                         }
 
                         val newChars = newPassword.toCharArray()
-                        val secretStore = warmStores(app)
+                        val stores = warmStores(app, activity)
                         val success = withContext(Dispatchers.Default) {
                             app.masterPasswordManager.changePassword(newChars)
                         }
                         if (success) {
-                            rewriteStores(app, secretStore)
+                            if (!rewriteStores(app, stores, activity)) {
+                                newChars.fill('\u0000')
+                                error.value = "Biometric authentication required"
+                                working.value = false
+                                return@launch
+                            }
                             newChars.fill('\u0000')
                             currentPassword = ""; newPassword = ""; confirm.value = ""
                             working.value = false
@@ -272,7 +294,7 @@ private fun ChangePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun DeletePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
+private fun DeletePasswordDialog(app: RaccoonWalletApp, activity: FragmentActivity, onDismiss: () -> Unit) {
     var currentPassword by remember { mutableStateOf("") }
     val error = remember { mutableStateOf("") }
     val working = remember { mutableStateOf(false) }
@@ -311,9 +333,15 @@ private fun DeletePasswordDialog(app: RaccoonWalletApp, onDismiss: () -> Unit) {
                             return@launch
                         }
 
-                        val secretStore = warmStores(app)
+                        val stores = warmStores(app, activity)
                         app.masterPasswordManager.clearKey()
-                        rewriteStores(app, secretStore)
+                        if (!rewriteStores(app, stores, activity)) {
+                            // Biometric denied — re-derive key so stores stay readable
+                            app.masterPasswordManager.unlock(currentPassword.toCharArray())
+                            error.value = "Biometric authentication required"
+                            working.value = false
+                            return@launch
+                        }
                         app.masterPasswordManager.deletePassword()
 
                         currentPassword = ""
