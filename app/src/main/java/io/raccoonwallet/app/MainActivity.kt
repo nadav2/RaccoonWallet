@@ -31,9 +31,8 @@ class MainActivity : FragmentActivity() {
         val app = application as RaccoonWalletApp
         val passwordManager = app.masterPasswordManager
         val wipeProtection = app.wipeProtection
-        val needsPassword = passwordManager.isPasswordConfigured()
 
-        val earlyStartDestination: Any? = if (!needsPassword) {
+        val earlyStartDestination: Any? = if (!passwordManager.isPasswordConfigured()) {
             runIntegrityAndResolveStart(app)
         } else {
             null
@@ -42,6 +41,8 @@ class MainActivity : FragmentActivity() {
         setContent {
             val isUnlocked by passwordManager.unlocked.collectAsState()
             val wiped = remember { mutableStateOf(false) }
+            // Re-check on every recomposition — file is deleted after reset
+            val needsPassword = passwordManager.isPasswordConfigured()
 
             if (wiped.value) {
                 RaccoonWalletTheme {
