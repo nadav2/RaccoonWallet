@@ -218,7 +218,20 @@ class DkgViewModel(
         viewModelScope.launch {
             publicStore.setAuthMode(mode)
         }
-        // Signer goes to transport picker, Vault goes to waiting
+        _dkgState.value = DkgState.ChoosingPassword
+    }
+
+    fun setMasterPassword(password: CharArray) {
+        app.masterPasswordManager.setupPassword(password)
+        password.fill('\u0000')
+        proceedAfterPassword()
+    }
+
+    fun skipMasterPassword() {
+        proceedAfterPassword()
+    }
+
+    private fun proceedAfterPassword() {
         if (isVaultMode) {
             _dkgState.value = DkgState.WaitingForVault
         } else {
@@ -598,6 +611,7 @@ class DkgViewModel(
             try { secretStore?.deleteAll() } catch (_: Exception) {}
             secretStore = null
             publicStore.deleteAll()
+            app.masterPasswordManager.deletePassword()
             try {
                 KeystoreCipher.deleteKey("raccoonwallet_secret_master")
             } catch (_: Exception) {

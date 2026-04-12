@@ -22,7 +22,8 @@ class EncryptedJsonStore<T>(
     private val file: File,
     private val aead: KeystoreAead,
     private val serializer: KSerializer<T>,
-    private val defaultValue: T
+    private val defaultValue: T,
+    private val passwordKeyProvider: (() -> ByteArray?)? = null
 ) {
     private val json = Json { ignoreUnknownKeys = false }
     private val mutex = Mutex()
@@ -73,7 +74,8 @@ class EncryptedJsonStore<T>(
     private fun decryptFromBytes(cipher: Cipher, encrypted: ByteArray): T {
         return try {
             val decrypted = aead.decryptWithCipher(cipher, encrypted)
-            json.decodeFromString(serializer, String(decrypted))
+            val plaintext = unwrapPassword(decrypted)
+            json.decodeFromString(serializer, String(plaintext))
         } catch (e: java.security.GeneralSecurityException) {
             throw StoreDecryptionException(
                 "Failed to decrypt ${file.name}. Internal: ${e.message}", e
@@ -87,7 +89,8 @@ class EncryptedJsonStore<T>(
         if (encrypted.isEmpty()) return@withContext defaultValue
         try {
             val decrypted = aead.decryptWithCipher(cipher, encrypted)
-            json.decodeFromString(serializer, String(decrypted))
+            val plaintext = unwrapPassword(decrypted)
+            json.decodeFromString(serializer, String(plaintext))
         } catch (e: java.security.GeneralSecurityException) {
             throw StoreDecryptionException(
                 "Failed to decrypt ${file.name}. Internal: ${e.message}", e
@@ -97,7 +100,8 @@ class EncryptedJsonStore<T>(
 
     private suspend fun atomicWriteWithCipher(value: T, cipher: Cipher) = withContext(Dispatchers.IO) {
         val plaintext = json.encodeToString(serializer, value).toByteArray()
-        val encrypted = aead.encryptWithCipher(cipher, plaintext)
+        val toEncrypt = wrapWithPassword(plaintext)
+        val encrypted = aead.encryptWithCipher(cipher, toEncrypt)
         val tmp = File(file.parent, "${file.name}.tmp")
         tmp.writeBytes(encrypted)
         if (!tmp.renameTo(file)) {
@@ -114,13 +118,35 @@ class EncryptedJsonStore<T>(
         cached = defaultValue
     }
 
+    // ── Password layer helpers ──
+
+    private fun wrapWithPassword(plaintext: ByteArray): ByteArray {
+        val key = passwordKeyProvider?.invoke() ?: return plaintext
+        try {
+            val salt = PasswordCipher.generateSalt()
+            return PasswordCipher.encrypt(key, salt, plaintext)
+        } finally {
+            key.fill(0)
+        }
+    }
+
+    private fun unwrapPassword(data: ByteArray): ByteArray {
+        val key = passwordKeyProvider?.invoke() ?: return data
+        try {
+            return PasswordCipher.decrypt(key, data)
+        } finally {
+            key.fill(0)
+        }
+    }
+
     private suspend fun readFromDisk(): T = withContext(Dispatchers.IO) {
         if (!file.exists()) return@withContext defaultValue
         val encrypted = file.readBytes()
         if (encrypted.isEmpty()) return@withContext defaultValue
         try {
             val decrypted = aead.decrypt(encrypted)
-            json.decodeFromString(serializer, String(decrypted))
+            val plaintext = unwrapPassword(decrypted)
+            json.decodeFromString(serializer, String(plaintext))
         } catch (e: java.security.GeneralSecurityException) {
             throw StoreDecryptionException(
                 "Failed to decrypt ${file.name}. Key may have been invalidated " +
@@ -131,7 +157,8 @@ class EncryptedJsonStore<T>(
 
     private suspend fun atomicWrite(value: T) = withContext(Dispatchers.IO) {
         val plaintext = json.encodeToString(serializer, value).toByteArray()
-        val encrypted = aead.encrypt(plaintext)
+        val toEncrypt = wrapWithPassword(plaintext)
+        val encrypted = aead.encrypt(toEncrypt)
         val tmp = File(file.parent, "${file.name}.tmp")
         tmp.writeBytes(encrypted)
         if (!tmp.renameTo(file)) {

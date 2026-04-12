@@ -94,6 +94,7 @@ object IntegrityChecker {
         app.secretStoreFile.delete()
         java.io.File(app.secretStoreFile.parent, "${app.secretStoreFile.name}.tmp").delete()
         java.io.File(app.publicStoreFile.parent, "${app.publicStoreFile.name}.tmp").delete()
+        app.masterPasswordManager.deletePassword()
         try {
             val ks = KeyStore.getInstance("AndroidKeyStore")
             withContext(Dispatchers.IO) {

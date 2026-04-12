@@ -102,5 +102,7 @@ class PublicStore(private val store: EncryptedJsonStore<PublicStoreData>) {
         }
     }
 
+    suspend fun rewrite() { store.update { it } }
+
     suspend fun deleteAll() { store.delete() }
 }

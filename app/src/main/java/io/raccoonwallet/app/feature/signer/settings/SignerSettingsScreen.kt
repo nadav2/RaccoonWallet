@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import io.raccoonwallet.app.deps
+import io.raccoonwallet.app.feature.settings.PasswordSettingsSection
 import io.raccoonwallet.app.ui.components.DiagnosticsCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,7 +42,8 @@ fun SignerSettingsScreen(
     onModeReset: () -> Unit,
     onBack: () -> Unit
 ) {
-    val appSettings = (LocalContext.current.applicationContext as android.app.Application).deps.appSettings
+    val app = (LocalContext.current.applicationContext as android.app.Application).deps
+    val appSettings = app.appSettings
     val diagnostics by appSettings.diagnostics.collectAsState()
 
     val showResetConfirm = remember { mutableStateOf(false) }
@@ -90,6 +92,9 @@ fun SignerSettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             diagnostics?.let { DiagnosticsCard(data = it) }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            PasswordSettingsSection(app = app)
 
             Spacer(modifier = Modifier.height(32.dp))
             Button(

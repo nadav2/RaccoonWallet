@@ -1,6 +1,9 @@
 package io.raccoonwallet.app
 
 import android.app.Application
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
 import io.raccoonwallet.app.core.AppSettingsService
 import io.raccoonwallet.app.core.model.AuthMode
 import io.raccoonwallet.app.core.network.ChainManager
@@ -12,6 +15,7 @@ import io.raccoonwallet.app.core.storage.PublicStoreData
 import io.raccoonwallet.app.core.storage.SecretStore
 import io.raccoonwallet.app.core.storage.SecretStoreData
 import io.raccoonwallet.app.core.storage.KeystoreProvider
+import io.raccoonwallet.app.core.storage.MasterPasswordManager
 import io.raccoonwallet.app.core.transport.MessageCodec
 import io.raccoonwallet.app.core.transport.TransportBridge
 import io.raccoonwallet.app.core.transport.nfc.ApduChunker
@@ -30,12 +34,18 @@ class RaccoonWalletApp : Application() {
     lateinit var hceSessionManager: HceSessionManager
     lateinit var versionName: String
     lateinit var appSettings: AppSettingsService
+    lateinit var masterPasswordManager: MasterPasswordManager
 
     val publicStoreFile: File
         get() = File(filesDir, "public_store.enc")
 
     val secretStoreFile: File
         get() = File(filesDir, "secret_store.enc")
+
+    val passwordVerifierFile: File
+        get() = File(filesDir, "password_verifier.enc")
+
+    private val passwordKeyProvider: () -> ByteArray? = { masterPasswordManager.getKey() }
 
     fun getSecretAead(authMode: AuthMode): KeystoreAead =
         KeystoreProvider.secretAead(authMode)
@@ -46,7 +56,8 @@ class RaccoonWalletApp : Application() {
                 file = secretStoreFile,
                 aead = KeystoreProvider.secretAead(authMode),
                 serializer = SecretStoreData.serializer(),
-                defaultValue = SecretStoreData()
+                defaultValue = SecretStoreData(),
+                passwordKeyProvider = passwordKeyProvider
             )
         )
     }
@@ -58,6 +69,7 @@ class RaccoonWalletApp : Application() {
             KeystoreCipher.deleteKey("raccoonwallet_secret_master")
         } catch (_: Exception) { }
         publicStore.deleteAll()
+        masterPasswordManager.deletePassword()
     }
 
     /**
@@ -71,7 +83,8 @@ class RaccoonWalletApp : Application() {
                 file = publicStoreFile,
                 aead = KeystoreProvider.publicAead(),
                 serializer = PublicStoreData.serializer(),
-                defaultValue = PublicStoreData()
+                defaultValue = PublicStoreData(),
+                passwordKeyProvider = passwordKeyProvider
             )
         )
     }
@@ -80,13 +93,15 @@ class RaccoonWalletApp : Application() {
         super.onCreate()
 
         versionName = packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
+        masterPasswordManager = MasterPasswordManager(passwordVerifierFile)
 
         publicStore = PublicStore(
             EncryptedJsonStore(
                 file = publicStoreFile,
                 aead = KeystoreProvider.publicAead(),
                 serializer = PublicStoreData.serializer(),
-                defaultValue = PublicStoreData()
+                defaultValue = PublicStoreData(),
+                passwordKeyProvider = passwordKeyProvider
             )
         )
 
@@ -104,6 +119,15 @@ class RaccoonWalletApp : Application() {
             secretStoreFile = secretStoreFile,
             versionName = versionName,
             resetAction = ::resetAction
+        )
+
+        // Lock password when the app truly goes to background (process-level).
+        // Activity-level onStop fires during biometric prompts and system overlays,
+        // but ProcessLifecycleOwner only fires when the whole app is backgrounded.
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_STOP) masterPasswordManager.lock()
+            }
         )
     }
 }

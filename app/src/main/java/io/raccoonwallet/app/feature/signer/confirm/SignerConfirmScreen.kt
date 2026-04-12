@@ -89,7 +89,7 @@ fun SignerConfirmScreen(
                     val (toAddress, valueFormatted) = remember(req.txData, req.to, req.chainId, req.valueWei) {
                         val decoded = if (req.txData != "0x") Erc20Abi.decodeTransfer(req.txData) else null
                         val token = if (decoded != null) TokenRegistry.findByAddress(req.chainId, req.to) else null
-                        val to = if (decoded != null) decoded.first else req.to
+                        val to = decoded?.first ?: req.to
                         val value = if (decoded != null && token != null) {
                             "${Hex.weiToEther(decoded.second, token.decimals)} ${token.symbol}"
                         } else if (decoded != null) {

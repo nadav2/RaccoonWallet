@@ -151,7 +151,7 @@ fun DkgScreen(
         val step = dkgStep(state, isVault)
         if (step != null) {
             Spacer(modifier = Modifier.height(16.dp))
-            val totalSteps = if (isVault) 4 else 5
+            val totalSteps = if (isVault) 5 else 6
             io.raccoonwallet.app.ui.components.SetupStepIndicator(
                 currentStep = step,
                 totalSteps = totalSteps
@@ -340,6 +340,13 @@ fun DkgScreen(
                         Text("Continue")
                     }
                 }
+            }
+
+            is DkgState.ChoosingPassword -> {
+                PasswordSetupContent(
+                    onPasswordSet = { viewModel.setMasterPassword(it) },
+                    onSkip = { viewModel.skipMasterPassword() }
+                )
             }
 
             is DkgState.ChoosingTransport -> {
@@ -910,18 +917,19 @@ private fun VaultWaitingView(onScanQr: () -> Unit, onNfcReceive: () -> Unit) {
  * Map DKG state to step number for the progress indicator.
  * Returns null for states that shouldn't show a step (Idle, Failed).
  *
- * Signer (5 steps): Seed -> Security -> Transport -> Transfer -> Done
- * Vault (4 steps): Security -> Connect -> Receive -> Done
+ * Signer (6 steps): Seed -> Security -> Password -> Transport -> Transfer -> Done
+ * Vault (5 steps): Security -> Password -> Connect -> Receive -> Done
  */
 private fun dkgStep(state: DkgState, isVault: Boolean): Int? {
     if (isVault) {
         return when (state) {
             is DkgState.ChoosingBiometric -> 1
-            is DkgState.WaitingForVault -> 2
+            is DkgState.ChoosingPassword -> 2
+            is DkgState.WaitingForVault -> 3
             is DkgState.AwaitingNfcTap, is DkgState.ReceivingNfc,
-            is DkgState.ScanningQr -> 3
+            is DkgState.ScanningQr -> 4
             is DkgState.AwaitingBiometric, is DkgState.StoringKeys,
-            is DkgState.DisplayingAck, is DkgState.Complete -> 4
+            is DkgState.DisplayingAck, is DkgState.Complete -> 5
             else -> null
         }
     } else {
@@ -933,11 +941,12 @@ private fun dkgStep(state: DkgState, isVault: Boolean): Int? {
             is DkgState.ImportingSeed -> 1
             is DkgState.SeedConfirmed, is DkgState.GeneratingPaillier,
             is DkgState.SplittingKeys, is DkgState.ChoosingBiometric -> 2
-            is DkgState.ChoosingTransport -> 3
+            is DkgState.ChoosingPassword -> 3
+            is DkgState.ChoosingTransport -> 4
             is DkgState.AwaitingNfcTap, is DkgState.ReceivingNfc,
-            is DkgState.DisplayingQr, is DkgState.ScanningQr -> 4
+            is DkgState.DisplayingQr, is DkgState.ScanningQr -> 5
             is DkgState.AwaitingBiometric, is DkgState.StoringKeys,
-            is DkgState.Complete -> 5
+            is DkgState.Complete -> 6
             else -> null
         }
     }
