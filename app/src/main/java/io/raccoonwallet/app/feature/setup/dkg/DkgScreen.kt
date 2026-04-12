@@ -2,6 +2,9 @@ package io.raccoonwallet.app.feature.setup.dkg
 
 import androidx.activity.compose.LocalActivity
 import android.view.HapticFeedbackConstants
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -59,6 +62,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -151,7 +155,7 @@ fun DkgScreen(
         val step = dkgStep(state, isVault)
         if (step != null) {
             Spacer(modifier = Modifier.height(16.dp))
-            val totalSteps = if (isVault) 5 else 6
+            val totalSteps = if (isVault) 4 else 5
             io.raccoonwallet.app.ui.components.SetupStepIndicator(
                 currentStep = step,
                 totalSteps = totalSteps
@@ -322,11 +326,84 @@ fun DkgScreen(
                     )
                 }
 
+                // Master password
+                Spacer(modifier = Modifier.height(16.dp))
+                var passwordEnabled by remember { mutableStateOf(false) }
+                var password by remember { mutableStateOf("") }
+                var confirmPassword by remember { mutableStateOf("") }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Master password", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Required every time you open the app",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = passwordEnabled,
+                        onCheckedChange = {
+                            passwordEnabled = it
+                            if (!it) { password = ""; confirmPassword = "" }
+                        },
+                        enabled = !isGenerating
+                    )
+                }
+
+                if (passwordEnabled) {
+                    val tooShort = password.isNotEmpty() && password.length < io.raccoonwallet.app.core.storage.MasterPasswordManager.MIN_PASSWORD_LENGTH
+                    val mismatch = confirmPassword.isNotEmpty() && password != confirmPassword
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    TextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        isError = tooShort,
+                        supportingText = if (tooShort) {
+                            { Text("Minimum ${io.raccoonwallet.app.core.storage.MasterPasswordManager.MIN_PASSWORD_LENGTH} characters") }
+                        } else null,
+                        singleLine = true,
+                        enabled = !isGenerating,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it },
+                        label = { Text("Confirm Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        isError = mismatch,
+                        supportingText = if (mismatch) {
+                            { Text("Passwords do not match") }
+                        } else null,
+                        singleLine = true,
+                        enabled = !isGenerating,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                val passwordValid = !passwordEnabled ||
+                    (password.length >= io.raccoonwallet.app.core.storage.MasterPasswordManager.MIN_PASSWORD_LENGTH &&
+                        password == confirmPassword)
+
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
-                    onClick = { viewModel.setAuthMode(selectedAuthMode) },
+                    onClick = {
+                        val pw = if (passwordEnabled) password.toCharArray() else null
+                        password = ""; confirmPassword = ""
+                        viewModel.setSecurityOptions(selectedAuthMode, pw)
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !isGenerating
+                    enabled = !isGenerating && passwordValid
                 ) {
                     if (isGenerating) {
                         CircularProgressIndicator(
@@ -342,11 +419,10 @@ fun DkgScreen(
                 }
             }
 
-            is DkgState.ChoosingPassword -> {
-                PasswordSetupContent(
-                    onPasswordSet = { viewModel.setMasterPassword(it) },
-                    onSkip = { viewModel.skipMasterPassword() }
-                )
+            is DkgState.PreparingSecurity -> {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Setting up security...", style = MaterialTheme.typography.bodyMedium)
             }
 
             is DkgState.ChoosingTransport -> {
@@ -923,13 +999,12 @@ private fun VaultWaitingView(onScanQr: () -> Unit, onNfcReceive: () -> Unit) {
 private fun dkgStep(state: DkgState, isVault: Boolean): Int? {
     if (isVault) {
         return when (state) {
-            is DkgState.ChoosingBiometric -> 1
-            is DkgState.ChoosingPassword -> 2
-            is DkgState.WaitingForVault -> 3
+            is DkgState.ChoosingBiometric, is DkgState.PreparingSecurity -> 1
+            is DkgState.WaitingForVault -> 2
             is DkgState.AwaitingNfcTap, is DkgState.ReceivingNfc,
-            is DkgState.ScanningQr -> 4
+            is DkgState.ScanningQr -> 3
             is DkgState.AwaitingBiometric, is DkgState.StoringKeys,
-            is DkgState.DisplayingAck, is DkgState.Complete -> 5
+            is DkgState.DisplayingAck, is DkgState.Complete -> 4
             else -> null
         }
     } else {
@@ -940,13 +1015,13 @@ private fun dkgStep(state: DkgState, isVault: Boolean): Int? {
             is DkgState.ShowingSeed,
             is DkgState.ImportingSeed -> 1
             is DkgState.SeedConfirmed, is DkgState.GeneratingPaillier,
-            is DkgState.SplittingKeys, is DkgState.ChoosingBiometric -> 2
-            is DkgState.ChoosingPassword -> 3
-            is DkgState.ChoosingTransport -> 4
+            is DkgState.SplittingKeys, is DkgState.ChoosingBiometric,
+            is DkgState.PreparingSecurity -> 2
+            is DkgState.ChoosingTransport -> 3
             is DkgState.AwaitingNfcTap, is DkgState.ReceivingNfc,
-            is DkgState.DisplayingQr, is DkgState.ScanningQr -> 5
+            is DkgState.DisplayingQr, is DkgState.ScanningQr -> 4
             is DkgState.AwaitingBiometric, is DkgState.StoringKeys,
-            is DkgState.Complete -> 6
+            is DkgState.Complete -> 5
             else -> null
         }
     }

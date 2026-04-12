@@ -1,9 +1,6 @@
 package io.raccoonwallet.app
 
 import android.app.Application
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.ProcessLifecycleOwner
 import io.raccoonwallet.app.core.AppSettingsService
 import io.raccoonwallet.app.core.model.AuthMode
 import io.raccoonwallet.app.core.network.ChainManager
@@ -128,11 +125,6 @@ class RaccoonWalletApp : Application() {
             resetAction = ::resetAction
         )
 
-        ProcessLifecycleOwner.get().lifecycle.addObserver(
-            LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_STOP) masterPasswordManager.lock()
-            }
-        )
     }
 }
 

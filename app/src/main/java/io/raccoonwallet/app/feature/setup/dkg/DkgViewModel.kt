@@ -213,28 +213,21 @@ class DkgViewModel(
         }
     }
 
-    fun setAuthMode(mode: AuthMode) {
+    fun setSecurityOptions(mode: AuthMode, password: CharArray?) {
         authMode = mode
+        _dkgState.value = DkgState.PreparingSecurity
         viewModelScope.launch {
             publicStore.setAuthMode(mode)
-        }
-        _dkgState.value = DkgState.ChoosingPassword
-    }
-
-    fun setMasterPassword(password: CharArray) {
-        app.masterPasswordManager.preparePassword(password)
-        proceedAfterPassword()
-    }
-
-    fun skipMasterPassword() {
-        proceedAfterPassword()
-    }
-
-    private fun proceedAfterPassword() {
-        if (isVaultMode) {
-            _dkgState.value = DkgState.WaitingForVault
-        } else {
-            _dkgState.value = DkgState.ChoosingTransport
+            if (password != null) {
+                withContext(Dispatchers.Default) {
+                    app.masterPasswordManager.preparePassword(password)
+                }
+            }
+            if (isVaultMode) {
+                _dkgState.value = DkgState.WaitingForVault
+            } else {
+                _dkgState.value = DkgState.ChoosingTransport
+            }
         }
     }
 

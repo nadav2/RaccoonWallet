@@ -17,7 +17,7 @@ sealed class DkgState {
     data object GeneratingPaillier : DkgState()
     data object SplittingKeys : DkgState()
     data object ChoosingBiometric : DkgState()
-    data object ChoosingPassword : DkgState()
+    data object PreparingSecurity : DkgState()
     data object ChoosingTransport : DkgState()
 
     // NFC flow
